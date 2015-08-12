@@ -1711,6 +1711,7 @@ offsets = {
     "FramebufferTextureMultiviewOVR": 1675,
     "NamedFramebufferTextureMultiviewOVR": 1676,
     "FramebufferTextureMultisampleMultiviewOVR": 1677,
+    "TexPageCommitmentEXT": 1678,
 }
 
 functions = [
