@@ -162,6 +162,16 @@ if with_gallium_svga
 else
   driver_svga = declare_dependency()
 endif
+if with_gallium_pvr
+  subdir('drivers/pvr')
+else
+  driver_pvr = declare_dependency()
+endif
+if with_gallium_pvr_alias
+  subdir('drivers/pvr_alias')
+else
+  driver_pvr_alias = declare_dependency()
+endif
 if with_gallium_virgl
   subdir('winsys/virgl/common')
   if not with_platform_windows
@@ -200,6 +210,11 @@ endif
 if with_gallium_rusticl
   subdir('frontends/rusticl')
   subdir('targets/rusticl')
+endif
+if with_gallium_pvr
+  subdir('frontends/pvr')
+else
+  libpvr = []
 endif
 if with_glx == 'xlib'
   subdir('winsys/sw/xlib')
