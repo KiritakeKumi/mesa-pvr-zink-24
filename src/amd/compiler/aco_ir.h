@@ -454,8 +454,7 @@ public:
    constexpr Operand()
        : reg_(PhysReg{128}), isTemp_(false), isFixed_(true), isPrecolored_(false),
          isConstant_(false), isKill_(false), isUndef_(true), isFirstKill_(false),
-         isLateKill_(false), isClobbered_(false), isCopyKill_(false), is16bit_(false),
-         is24bit_(false), signext(false), constSize(0)
+         isLateKill_(false), isClobbered_(false),isCopyKill_(false), is16bit_(false), is24bit_(false), signext(false), constSize(0)
    {}
 
    explicit Operand(Temp r) noexcept
