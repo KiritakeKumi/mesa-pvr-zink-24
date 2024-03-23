@@ -2145,6 +2145,10 @@ handle_fixed_operands(ra_ctx& ctx, RegisterFile& register_file,
          bool found = false;
          for (auto op : regs.second) {
             PhysRegInterval range = {op->physReg(), ctx.program->temp_rc[regs.first].size()};
+            if (instr->isCall()) {
+               if (instr->call().clobbered_regs.contains(op->physReg()))
+                  continue;
+            }
             bool intersects_with_def = false;
             for (const auto& def : instr->definitions) {
                if (!def.isTemp() || !def.isFixed())
@@ -3175,6 +3179,44 @@ register_allocation(Program* program, ra_test_policy policy)
                register_file.clear(op);
          }
 
+         if (instr->isCall()) {
+            /* create parallelcopy pair to move blocking vars */
+            RegisterFile tmp_file = register_file;
+            std::vector<unsigned> vars, vars2;
+            for (auto& slice : instr->call().clobbered_regs.slices) {
+               vars2 = collect_vars(ctx, tmp_file, slice);
+               vars.insert(vars.end(), vars2.begin(), vars2.end());
+            }
+
+            /* Allow linear VGPRs and the stack pointer in the clobbered range.
+             * Linear VGPRs are spilled in spill_preserved, and the stack pointer is always
+             * guaranteed to be preserved.
+             */
+            for (auto it = vars.begin(); it != vars.end();) {
+               if (program->temp_rc[*it].is_linear_vgpr() || *it == instr->operands[0].tempId()) {
+                  it = vars.erase(it);
+                  tmp_file.block(ctx.assignments[*it].reg, program->temp_rc[*it]);
+               } else {
+                  ++it;
+               }
+            }
+
+            tmp_file.fill_killed_operands(instr.get());
+            tmp_file.block(instr->call().clobbered_regs);
+
+            adjust_max_used_regs(ctx, RegClass::s1,
+                                 instr->call().abi.clobberedRegs.sgpr.hi().reg() - 1);
+            adjust_max_used_regs(ctx, RegClass::v1,
+                                 instr->call().abi.clobberedRegs.vgpr.hi().reg() - 1);
+
+            ASSERTED bool success = false;
+            success =
+               get_regs_for_copies(ctx, tmp_file, parallelcopy, vars, instr, PhysRegInterval{});
+            assert(success);
+
+            update_renames(ctx, register_file, parallelcopy, instr, rename_not_killed_ops);
+         }
+
          optimize_encoding(ctx, register_file, instr);
 
          /* Handle definitions which must have the same register as an operand.
@@ -3204,6 +3246,9 @@ register_allocation(Program* program, ra_test_policy policy)
                RegisterFile tmp_file(register_file);
                /* re-enable the killed operands, so that we don't move the blocking vars there */
                tmp_file.fill_killed_operands(instr.get());
+               if (instr->isCall()) {
+                  tmp_file.block(instr->call().clobbered_regs);
+               }
 
                ASSERTED bool success = false;
                success = get_regs_for_copies(ctx, tmp_file, parallelcopy, vars, instr, def_regs);
