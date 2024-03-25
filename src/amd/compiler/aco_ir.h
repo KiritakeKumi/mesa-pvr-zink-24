@@ -748,6 +748,7 @@ public:
       isPrecolored_ = isFixed_;
    }
 
+
    constexpr bool isConstant() const noexcept { return isConstant_; }
 
    constexpr bool isLiteral() const noexcept { return isConstant() && reg_ == 255; }
