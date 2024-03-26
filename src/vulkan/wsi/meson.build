@@ -13,6 +13,8 @@ if with_platform_x11
   files_vulkan_wsi += files('wsi_common_x11.c')
 endif
 
+incs_vulkan_wsi = [inc_include, inc_src]
+
 if with_platform_wayland
   files_vulkan_wsi += files('wsi_common_wayland.c')
   files_vulkan_wsi += wp_files['fifo-v1']
@@ -20,6 +22,8 @@ if with_platform_wayland
   files_vulkan_wsi += wp_files['linux-dmabuf-unstable-v1']
   files_vulkan_wsi += wp_files['presentation-time']
   files_vulkan_wsi += wp_files['tearing-control-v1']
+  files_vulkan_wsi += [color_management_client_protocol_h, color_management_protocol_c]
+  incs_vulkan_wsi = ['wayland/color-management']
   links_vulkan_wsi += libloader_wayland_helper
   files_vulkan_wsi += wp_files['linux-drm-syncobj-v1']
 endif
@@ -54,7 +58,7 @@ wsi_entrypoints = custom_target(
 libvulkan_wsi = static_library(
   'vulkan_wsi',
   [files_vulkan_wsi, wsi_entrypoints],
-  include_directories : [inc_include, inc_src],
+  include_directories : incs_vulkan_wsi,
   dependencies : [
     vulkan_wsi_deps, dep_libdrm, dep_libudev, idep_vulkan_util_headers,
     idep_vulkan_runtime_headers, idep_xmlconfig, idep_mesautil, platform_deps,
