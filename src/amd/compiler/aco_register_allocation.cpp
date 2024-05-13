@@ -3118,11 +3118,25 @@ register_allocation(Program* program, ra_test_policy policy)
    ra_ctx ctx(program, policy);
    get_affinities(ctx);
 
+   std::unordered_set<PhysReg> blocked_sgpr;
+   if (ctx.program->is_callee) {
+      SparseRegisterSet preserved_sgpr =
+         program->callee_abi.preservedRegisters(ctx.program->max_reg_demand.sgpr, 0);
+      for (auto reg : preserved_sgpr) {
+         blocked_sgpr.insert(reg);
+         adjust_max_used_regs(ctx, RegClass::s1, reg);
+      }
+   }
+
    for (Block& block : program->blocks) {
       ctx.block = &block;
 
       /* initialize register file */
       RegisterFile register_file = init_reg_file(ctx, program->live.live_in, block);
+      for (auto& reg : blocked_sgpr) {
+         if (register_file.is_empty_or_blocked(reg))
+            register_file.block(reg, s1);
+      }
       ctx.war_hint.reset();
       ctx.rr_vgpr_it = {PhysReg{256}};
       ctx.rr_sgpr_it = {PhysReg{0}};
@@ -3143,7 +3157,27 @@ register_allocation(Program* program, ra_test_policy policy)
          std::vector<parallelcopy> parallelcopy;
          assert(!is_phi(instr));
 
-         if (instr->opcode == aco_opcode::p_reload_preserved_vgpr && block.linear_succs.empty()) {
+         if (instr->opcode == aco_opcode::p_spill_preserved_sgpr) {
+            if (register_file.is_blocked(instr->operands[0].physReg()))
+               register_file.clear(instr->operands[0]);
+            blocked_sgpr.erase(instr->operands[0].physReg());
+            continue;
+         } else if (instr->opcode == aco_opcode::p_reload_preserved_sgpr) {
+            blocked_sgpr.insert(instr->operands[0].physReg());
+            std::vector<unsigned> vars = collect_vars(
+               ctx, register_file, {instr->operands[0].physReg(), instr->operands[0].size()});
+            register_file.block(instr->operands[0].physReg(), instr->operands[0].regClass());
+            ASSERTED bool success = false;
+            success = get_regs_for_copies(ctx, register_file, parallelcopy, vars, instr,
+                                          PhysRegInterval{});
+            assert(success);
+
+            update_renames(ctx, register_file, parallelcopy, instr, (UpdateRenames)0);
+            register_file.block(instr->operands[0].physReg(), instr->operands[0].regClass());
+            emit_parallel_copy(ctx, parallelcopy, instr, instructions, register_file[scc], register_file);
+            continue;
+         } else if (instr->opcode == aco_opcode::p_reload_preserved_vgpr &&
+                    block.linear_succs.empty()) {
             SparseRegisterSet preserved_vgpr =
                ctx.program->callee_abi.preservedRegisters(0, ctx.program->max_reg_demand.vgpr);
             std::vector<unsigned> vars, vars2;

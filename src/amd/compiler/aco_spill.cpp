@@ -75,6 +75,8 @@ struct spill_ctx {
    std::vector<aco::unordered_map<Temp, uint32_t>> spills_entry;
    std::vector<aco::unordered_map<Temp, uint32_t>> spills_exit;
 
+   std::vector<uint32_t> preserved_spill_ids;
+
    std::vector<bool> processed;
    std::vector<loop_info> loop;
 
@@ -142,8 +144,24 @@ struct spill_ctx {
          for (auto pair : loop.back().spills)
             add_interference(spill_id, pair.second);
       }
+      for (auto id : preserved_spill_ids)
+         add_interference(spill_id, id);
 
       spills[to_spill] = spill_id;
+      return spill_id;
+   }
+
+   uint32_t add_preserved_spill(RegClass rc,
+                                std::vector<aco::unordered_map<Temp, uint32_t>>& block_spills)
+   {
+      const uint32_t spill_id = allocate_spill_id(rc);
+      for (auto& spills : block_spills)
+         for (auto pair : spills)
+            add_interference(spill_id, pair.second);
+      for (auto id : preserved_spill_ids)
+         add_interference(spill_id, id);
+      preserved_spill_ids.push_back(spill_id);
+
       return spill_id;
    }
 
@@ -1515,6 +1533,8 @@ end_unused_spill_vgprs(spill_ctx& ctx, Block& block, std::vector<Temp>& vgpr_spi
       if (pair.first.type() == RegType::sgpr && ctx.is_reloaded[pair.second])
          is_used[slots[pair.second] / ctx.wave_size] = true;
    }
+   for (auto preserved : ctx.preserved_spill_ids)
+      is_used[slots[preserved] / ctx.wave_size] = true;
 
    std::vector<Temp> temps;
    for (unsigned i = 0; i < vgpr_spill_temps.size(); i++) {
@@ -1708,6 +1728,13 @@ assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr)
                   }
                }
 
+               if (!(*it)->definitions[0].isTemp()) {
+                  auto id_it = std::find(ctx.preserved_spill_ids.begin(),
+                                         ctx.preserved_spill_ids.end(), spill_id);
+                  assert(id_it != ctx.preserved_spill_ids.end());
+                  ctx.preserved_spill_ids.erase(id_it);
+               }
+
                /* reload sgpr: just add the vgpr temp to operands */
                Instruction* reload = create_instruction(aco_opcode::p_reload, Format::PSEUDO, 2, 1);
                reload->operands[0] = Operand(vgpr_spill_temps[spill_slot / ctx.wave_size]);
@@ -1726,6 +1753,37 @@ assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr)
    ctx.program->config->scratch_bytes_per_wave += ctx.vgpr_spill_slots * 4 * ctx.program->wave_size;
 }
 
+void
+spill_reload_preserved_sgpr(spill_ctx& ctx, std::vector<aco_ptr<Instruction>>& spill_instructions,
+                            std::vector<aco_ptr<Instruction>>& reload_instructions, PhysReg reg)
+{
+   uint32_t spill_id = ctx.add_preserved_spill(RegClass::s1, ctx.spills_exit);
+
+   aco_ptr<Instruction> spill{create_instruction(aco_opcode::p_spill, Format::PSEUDO, 2, 0)};
+   spill->operands[0] = Operand(reg, RegClass::s1);
+   spill->operands[1] = Operand::c32(spill_id);
+
+   aco_ptr<Instruction> unblock{
+      create_instruction(aco_opcode::p_spill_preserved_sgpr, Format::PSEUDO, 1, 0)};
+   unblock->operands[0] = Operand(reg, RegClass::s1);
+
+   spill_instructions.emplace_back(std::move(spill));
+   spill_instructions.emplace_back(std::move(unblock));
+
+   aco_ptr<Instruction> block{
+      create_instruction(aco_opcode::p_reload_preserved_sgpr, Format::PSEUDO, 1, 0)};
+   block->operands[0] = Operand(reg, RegClass::s1);
+
+   aco_ptr<Instruction> reload{create_instruction(aco_opcode::p_reload, Format::PSEUDO, 1, 1)};
+   reload->operands[0] = Operand::c32(spill_id);
+   reload->definitions[0] = Definition(reg, RegClass::s1);
+
+   reload_instructions.emplace_back(std::move(block));
+   reload_instructions.emplace_back(std::move(reload));
+
+   ctx.is_reloaded[spill_id] = true;
+}
+
 } /* end namespace */
 
 void
@@ -1738,6 +1796,11 @@ spill(Program* program)
 
    const uint16_t sgpr_limit = get_addr_sgpr_from_waves(program, program->min_waves);
    const uint16_t vgpr_limit = get_addr_vgpr_from_waves(program, program->min_waves);
+   SparseRegisterSet clobberedSGPRs =
+      program->callee_abi.preservedRegisters(sgpr_limit, 0).invert(sgpr_limit, 0);
+   uint16_t abi_sgpr_limit = std::min((uint16_t)(clobberedSGPRs.size()), sgpr_limit);
+   if (!program->is_callee)
+      abi_sgpr_limit = sgpr_limit;
 
    /* no spilling when register pressure is low enough */
    if (program->has_call) {
@@ -1755,7 +1818,7 @@ spill(Program* program)
 
       if (!call_needs_spill)
          return;
-   } else if (program->num_waves > 0) {
+   } else if (program->num_waves > 0 && program->cur_reg_demand.sgpr <= abi_sgpr_limit) {
       return;
    }
 
@@ -1766,7 +1829,9 @@ spill(Program* program)
    const RegisterDemand demand = program->max_reg_demand; /* current max */
    RegisterDemand target(vgpr_limit, sgpr_limit);
    if (program->is_callee)
-      target = program->callee_abi.callee_register_limit(target, program->callee_param_demand);
+      target = program->callee_abi.preservedRegisters(sgpr_limit, vgpr_limit)
+                  .invert(sgpr_limit, vgpr_limit)
+                  .demand();
 
    uint16_t extra_vgprs = 0;
    uint16_t extra_sgprs = 0;
@@ -1792,8 +1857,8 @@ spill(Program* program)
    }
 
    unsigned sgpr_spills = sgpr_call_spills;
-   if (demand.sgpr > sgpr_limit)
-      sgpr_spills += demand.sgpr - sgpr_limit;
+   if (demand.sgpr > abi_sgpr_limit)
+      sgpr_spills += demand.sgpr - abi_sgpr_limit;
 
    if (sgpr_spills)
       extra_vgprs = DIV_ROUND_UP(sgpr_spills * 2, program->wave_size) + 1;
@@ -1803,11 +1868,11 @@ spill(Program* program)
          extra_sgprs = 1; /* SADDR */
       else
          extra_sgprs = 5; /* scratch_resource (s4) + scratch_offset (s1) */
-      if (demand.sgpr + extra_sgprs > sgpr_limit || sgpr_call_spills) {
+      if (demand.sgpr + extra_sgprs > abi_sgpr_limit || sgpr_call_spills) {
          /* re-calculate in case something has changed */
          sgpr_spills = sgpr_call_spills;
-         if (demand.sgpr + extra_sgprs > sgpr_limit)
-            sgpr_spills += demand.sgpr + extra_sgprs - sgpr_limit;
+         if (demand.sgpr + extra_sgprs > abi_sgpr_limit)
+            sgpr_spills += demand.sgpr + extra_sgprs - abi_sgpr_limit;
          extra_vgprs = DIV_ROUND_UP(sgpr_spills * 2, program->wave_size) + 1;
       }
    }
@@ -1820,9 +1885,44 @@ spill(Program* program)
    gather_ssa_use_info(ctx);
    get_rematerialize_info(ctx);
 
+   /* Prepare spilling of preserved SGPRs. Don't insert the instructions yet so live info
+    * stays valid.
+    */
+   std::vector<aco_ptr<Instruction>> preserved_spill_instructions;
+   std::vector<aco_ptr<Instruction>> preserved_reload_instructions;
+   if (demand.sgpr > abi_sgpr_limit && ctx.program->is_callee) {
+      ctx.preserved_spill_ids.reserve(demand.sgpr - abi_sgpr_limit);
+
+      unsigned max_reg =
+         std::min((unsigned)program->cur_reg_demand.sgpr + extra_sgprs, (unsigned)sgpr_limit);
+      for (PhysReg reg : ctx.program->callee_abi.preservedRegisters(max_reg, vgpr_limit))
+         spill_reload_preserved_sgpr(ctx, preserved_spill_instructions,
+                                     preserved_reload_instructions, reg);
+   }
+
    /* create spills and reloads */
    for (unsigned i = 0; i < program->blocks.size(); i++)
       spill_block(ctx, i);
+
+   if (!preserved_spill_instructions.empty()) {
+      auto spill_insert_point = std::find_if(
+         program->blocks.front().instructions.begin(), program->blocks.front().instructions.end(),
+         [](const auto& instr) { return instr->opcode == aco_opcode::p_spill_preserved_vgpr; });
+      assert(spill_insert_point != program->blocks.front().instructions.end());
+
+      spill_insert_point = std::next(spill_insert_point);
+      program->blocks.front().instructions.insert(
+         spill_insert_point, std::move_iterator(preserved_spill_instructions.begin()),
+         std::move_iterator(preserved_spill_instructions.end()));
+
+      auto reload_insert_point = std::find_if(
+         program->blocks.back().instructions.begin(), program->blocks.back().instructions.end(),
+         [](const auto& instr) { return instr->opcode == aco_opcode::p_reload_preserved_vgpr; });
+      assert(reload_insert_point != program->blocks.back().instructions.end());
+      program->blocks.back().instructions.insert(
+         reload_insert_point, std::move_iterator(preserved_reload_instructions.begin()),
+         std::move_iterator(preserved_reload_instructions.end()));
+   }
 
    /* assign spill slots and DCE rematerialized code */
    assign_spill_slots(ctx, extra_vgprs);
