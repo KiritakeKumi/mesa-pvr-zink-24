@@ -14,7 +14,15 @@
 #include <bitset>
 #include <map>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+namespace std {
+template <> struct hash<aco::PhysReg> {
+   size_t operator()(aco::PhysReg temp) const noexcept { return std::hash<uint32_t>{}(temp.reg_b); }
+};
+} // namespace std
 
 namespace aco {
 namespace {
@@ -2116,52 +2124,71 @@ handle_fixed_operands(ra_ctx& ctx, RegisterFile& register_file,
    assert(parallelcopy.empty());
 
    RegisterFile tmp_file(register_file);
+   std::unordered_map<unsigned, std::unordered_set<PhysReg>> temp_regs;
+   std::vector<unsigned> blocking_vars;
 
-   BITSET_DECLARE(mask, 128) = {0};
-
-   for (unsigned i = 0; i < instr->operands.size(); i++) {
-      Operand& op = instr->operands[i];
-
-      if (!op.isPrecolored())
+   for (auto it = instr->operands.begin(); it != instr->operands.end(); ++it) {
+      if (!it->isPrecolored())
          continue;
 
-      assert(op.isTemp());
-      PhysReg src = ctx.assignments[op.tempId()].reg;
-      adjust_max_used_regs(ctx, op.regClass(), op.physReg());
+      assert(it->isTemp());
+      adjust_max_used_regs(ctx, it->regClass(), it->physReg());
+      PhysReg src = ctx.assignments[it->tempId()].reg;
+      temp_regs[it->tempId()].emplace(it->physReg());
 
-      if (op.physReg() == src) {
-         tmp_file.block(op.physReg(), op.regClass());
-         continue;
+      if (src == it->physReg()) {
+         tmp_file.block(it->physReg(), it->regClass());
+      } else {
+         /* clear from register_file so fixed operands are not collected be collect_vars() */
+         if (!tmp_file.is_blocked(src))
+            tmp_file.clear(src, it->regClass()); // TODO: try to avoid moving block vars to src
       }
-
-      /* An instruction can have at most one operand precolored to the same register. */
-      assert(std::none_of(parallelcopy.begin(), parallelcopy.end(),
-                          [&](auto copy) { return copy.second.physReg() == op.physReg(); }));
-
-      /* clear from register_file so fixed operands are not collected be collect_vars() */
-      tmp_file.clear(src, op.regClass()); // TODO: try to avoid moving block vars to src
-
-      BITSET_SET(mask, i);
-
-      Operand pc_op(instr->operands[i].getTemp());
-      pc_op.setFixed(src);
-      Definition pc_def = Definition(op.physReg(), pc_op.regClass());
-      parallelcopy.emplace_back(pc_op, pc_def);
    }
 
-   if (BITSET_IS_EMPTY(mask))
-      return;
+   for (auto& regs : temp_regs) {
+      PhysReg src = ctx.assignments[regs.first].reg;
 
-   unsigned i;
-   std::vector<unsigned> blocking_vars;
-   BITSET_FOREACH_SET (i, mask, instr->operands.size()) {
-      Operand& op = instr->operands[i];
-      PhysRegInterval target{op.physReg(), op.size()};
-      std::vector<unsigned> blocking_vars2 = collect_vars(ctx, tmp_file, target);
-      blocking_vars.insert(blocking_vars.end(), blocking_vars2.begin(), blocking_vars2.end());
+      PhysReg live_reg = *regs.second.begin();
+      if (regs.second.size() > 1) {
+         bool found = false;
+         for (auto reg : regs.second) {
+            PhysRegInterval range = {reg, ctx.program->temp_rc[regs.first].size()};
+            bool intersects_with_def = false;
+            for (const auto& def : instr->definitions) {
+               if (!def.isTemp() || !def.isFixed())
+                  continue;
+               PhysRegInterval def_range = {def.physReg(), def.regClass().size()};
+               if (intersects(def_range, range)) {
+                  intersects_with_def = true;
+                  break;
+               }
+            }
+            if (intersects_with_def)
+               continue;
 
-      /* prevent get_regs_for_copies() from using these registers */
-      tmp_file.block(op.physReg(), op.regClass());
+            if (!found || reg == src) {
+               live_reg = reg;
+               found = true;
+               if (reg == src)
+                  break;
+            }
+         }
+      }
+
+      RegClass rc = ctx.program->temp_rc[regs.first];
+
+      for (auto reg : regs.second) {
+         if (reg == src)
+            continue;
+
+         Definition copy_def = Definition(reg, rc);
+         parallelcopy.emplace_back(Operand(Temp(regs.first, rc), src), copy_def, reg != live_reg);
+
+         PhysRegInterval target{reg, rc.size()};
+         std::vector<unsigned> blocking_vars2 = collect_vars(ctx, tmp_file, target);
+         blocking_vars.insert(blocking_vars.end(), blocking_vars2.begin(), blocking_vars2.end());
+         tmp_file.block(reg, rc);
+      }
    }
 
    get_regs_for_copies(ctx, tmp_file, parallelcopy, blocking_vars, instr, PhysRegInterval());
