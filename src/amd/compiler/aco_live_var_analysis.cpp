@@ -9,6 +9,29 @@
 
 namespace aco {
 
+namespace {
+void
+get_temp_register_demand(Instruction* instr, RegisterDemand& demand_before, RegisterDemand& demand_after)
+{
+   for (Definition def : instr->definitions) {
+      if (def.isKill())
+         demand_after += def.getTemp();
+      else if (def.isTemp())
+         demand_before -= def.getTemp();
+   }
+
+   for (Operand op : instr->operands) {
+      if (op.isFirstKill() || op.isCopyKill()) {
+         demand_before += op.getTemp();
+         if (op.isLateKill())
+            demand_after += op.getTemp();
+      } else if (op.isClobbered() && !op.isKill()) {
+         demand_before += op.getTemp();
+      }
+   }
+}
+}
+
 RegisterDemand
 get_live_changes(Instruction* instr)
 {
@@ -34,25 +57,20 @@ get_temp_registers(Instruction* instr)
    RegisterDemand demand_before;
    RegisterDemand demand_after;
 
-   for (Definition def : instr->definitions) {
-      if (def.isKill())
-         demand_after += def.getTemp();
-      else if (def.isTemp())
-         demand_before -= def.getTemp();
-   }
-
-   for (Operand op : instr->operands) {
-      if (op.isFirstKill() || op.isCopyKill()) {
-         demand_before += op.getTemp();
-         if (op.isLateKill())
-            demand_after += op.getTemp();
-      } else if (op.isClobbered() && !op.isKill()) {
-         demand_before += op.getTemp();
-      }
-   }
+   get_temp_register_demand(instr, demand_before, demand_after);
 
    demand_after.update(demand_before);
    return demand_after;
+}
+
+RegisterDemand get_temp_reg_changes(Instruction* instr)
+{
+   RegisterDemand demand_before;
+   RegisterDemand demand_after;
+
+   get_temp_register_demand(instr, demand_before, demand_after);
+
+   return demand_after - demand_before;
 }
 
 namespace {
