@@ -553,6 +553,13 @@ enum opcode {
    SHADER_OPCODE_MEMORY_LOAD_LOGICAL,
    SHADER_OPCODE_MEMORY_STORE_LOGICAL,
    SHADER_OPCODE_MEMORY_ATOMIC_LOGICAL,
+
+   /**
+    * Load a VGRF to generate an SSA value.
+    *
+    * Acts as a scheduling barrier.
+    */
+   SHADER_OPCODE_LOAD_REG,
 };
 
 enum fb_write_logical_srcs {
