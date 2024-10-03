@@ -1191,16 +1191,17 @@ split_copy(lower_context* ctx, unsigned offset, Definition* def, Operand* op,
    if ((ctx->program->gfx_level < GFX10 || ctx->program->gfx_level >= GFX11) &&
        src.def.regClass().type() == RegType::vgpr)
       max_size = MIN2(max_size, 4);
-   unsigned max_align = src.def.regClass().type() == RegType::vgpr ? 4 : 16;
+   unsigned max_def_align = src.def.regClass().type() == RegType::vgpr ? 4 : 16;
+   unsigned max_op_align = src.op.regClass().type() == RegType::vgpr ? 4 : 16;
 
    /* make sure the size is a power of two and reg % bytes == 0 */
    unsigned bytes = 1;
    for (; bytes <= max_size; bytes *= 2) {
       unsigned next = bytes * 2u;
-      bool can_increase = def_reg.reg_b % MIN2(next, max_align) == 0 &&
+      bool can_increase = def_reg.reg_b % MIN2(next, max_def_align) == 0 &&
                           offset + next <= src.bytes && next <= max_size;
       if (!src.op.isConstant() && can_increase)
-         can_increase = op_reg.reg_b % MIN2(next, max_align) == 0;
+         can_increase = op_reg.reg_b % MIN2(next, max_op_align) == 0;
       for (unsigned i = 0; !ignore_uses && can_increase && (i < bytes); i++)
          can_increase = (src.uses[offset + bytes + i] == 0) == (src.uses[offset] == 0);
       if (!can_increase)
