@@ -2130,6 +2130,9 @@ operand_can_use_reg(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr, unsign
          return false;
    }
 
+   if (rc.type() == RegType::sgpr && reg.reg() % rc.size())
+      return false;
+
    switch (instr->format) {
    case Format::SMEM:
       return reg != scc && reg != exec &&
