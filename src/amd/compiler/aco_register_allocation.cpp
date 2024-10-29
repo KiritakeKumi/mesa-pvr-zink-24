@@ -30,11 +30,16 @@ void add_subdword_definition(Program* program, aco_ptr<Instruction>& instr, Phys
                              bool allow_16bit_write);
 
 struct parallelcopy {
-   constexpr parallelcopy(Operand op_, Definition def_) : op(op_), def(def_)
+   constexpr parallelcopy() : skip_renaming(false) {}
+   constexpr parallelcopy(Operand op_, Definition def_) : op(op_), def(def_), skip_renaming(false)
+   {}
+   constexpr parallelcopy(Operand op_, Definition def_, bool skip_renaming_)
+       : op(op_), def(def_), skip_renaming(skip_renaming_)
    {}
 
    Operand op;
    Definition def;
+   bool skip_renaming;
 };
 
 struct assignment {
@@ -2953,11 +2958,15 @@ emit_parallel_copy_internal(ra_ctx& ctx, std::vector<parallelcopy>& parallelcopy
       pc->definitions[i] = parallelcopy[i].def;
       assert(pc->operands[i].size() == pc->definitions[i].size());
 
-      /* it might happen that the operand is already renamed. we have to restore the
-       * original name. */
-      auto it = ctx.orig_names.find(pc->operands[i].tempId());
-      Temp orig = it != ctx.orig_names.end() ? it->second : pc->operands[i].getTemp();
-      add_rename(ctx, orig, pc->definitions[i].getTemp());
+      if (!parallelcopy[i].skip_renaming) {
+         /* it might happen that the operand is already renamed. we have to restore the
+          * original name. */
+         auto it =
+            ctx.orig_names.find(pc->operands[i].tempId());
+         Temp orig = it != ctx.orig_names.end() ? it->second : pc->operands[i].getTemp();
+         add_rename(
+         ctx, orig, pc->definitions[i].getTemp());
+      }
    }
 
    if (temp_in_scc && (sgpr_operands_alias_defs || linear_vgpr)) {
