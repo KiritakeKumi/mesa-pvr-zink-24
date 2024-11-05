@@ -140,6 +140,11 @@ struct wsi_wl_display {
    bool same_gpu;
 
    clockid_t presentation_clock_id;
+
+   struct {
+      bool mastering_display_primaries;
+      bool extended_target_volume;
+   } color_features;
 };
 
 struct wsi_wayland {
@@ -194,6 +199,8 @@ struct wsi_wl_surface {
    struct wp_color_management_surface_v1 *color_surface;
    int color_surface_refcount;
    VkColorSpaceKHR colorspace;
+   VkHdrMetadataEXT hdr_metadata;
+   bool has_hdr_metadata;
 };
 
 struct wsi_wl_swapchain {
@@ -245,6 +252,8 @@ struct wsi_wl_swapchain {
    } present_ids;
 
    VkColorSpaceKHR colorspace;
+   VkHdrMetadataEXT hdr_metadata;
+   bool has_hdr_metadata;
 
    struct wsi_wl_image images[0];
 };
@@ -1033,7 +1042,17 @@ color_management_handle_supported_features(void *data,
                                            struct wp_color_manager_v1 *color_manager,
                                            unsigned int feature)
 {
-   /* We don't use any non-default features yet. */
+   struct wsi_wl_display *display = data;
+   switch (feature) {
+   case WP_COLOR_MANAGER_V1_FEATURE_SET_MASTERING_DISPLAY_PRIMARIES:
+      display->color_features.mastering_display_primaries = true;
+      break;
+   case WP_COLOR_MANAGER_V1_FEATURE_EXTENDED_TARGET_VOLUME:
+      display->color_features.extended_target_volume = true;
+      break;
+   default:
+      break;
+   }
 }
 
 static void
@@ -1097,8 +1116,11 @@ wsi_wl_swapchain_update_colorspace(struct wsi_wl_swapchain *chain)
    struct wsi_wl_surface *surface = chain->wsi_wl_surface;
    struct wsi_wl_display *display = surface->display;
 
-   if (surface->colorspace == chain->colorspace)
+   if (surface->colorspace == chain->colorspace &&
+       surface->has_hdr_metadata == chain->has_hdr_metadata &&
+       memcmp(&surface->colorspace, &chain->has_hdr_metadata, sizeof(VkHdrMetadataEXT)) == 0) {
       return VK_SUCCESS;
+   }
 
    bool needs_color_surface_new = needs_color_surface(chain->colorspace);
    if (needs_color_surface_new && !display->color_manager)
@@ -1122,6 +1144,8 @@ wsi_wl_swapchain_update_colorspace(struct wsi_wl_swapchain *chain)
    /* failure is fatal, so this potentially being wrong
       in that case doesn't matter */
    surface->colorspace = chain->colorspace;
+   surface->hdr_metadata = chain->hdr_metadata;
+   surface->has_hdr_metadata = chain->has_hdr_metadata;
    if (!needs_color_surface_new)
       return VK_SUCCESS;
 
@@ -1173,6 +1197,18 @@ wsi_wl_swapchain_update_colorspace(struct wsi_wl_swapchain *chain)
 
    wp_image_description_creator_params_v1_set_primaries_named(creator, primaries);
    wp_image_description_creator_params_v1_set_tf_named(creator, tf);
+   if (chain->has_hdr_metadata && display->color_features.extended_target_volume) {
+      wp_image_description_creator_params_v1_set_mastering_luminance(creator,
+         round(chain->hdr_metadata.minLuminance * 10000), round(chain->hdr_metadata.maxLuminance));
+      wp_image_description_creator_params_v1_set_max_cll(creator, round(chain->hdr_metadata.maxContentLightLevel));
+      wp_image_description_creator_params_v1_set_max_fall(creator, round(chain->hdr_metadata.maxFrameAverageLightLevel));
+      if (display->color_features.mastering_display_primaries)
+         wp_image_description_creator_params_v1_set_mastering_display_primaries(creator,
+            round(chain->hdr_metadata.displayPrimaryRed.x * 1000000), round(chain->hdr_metadata.displayPrimaryRed.y * 1000000),
+            round(chain->hdr_metadata.displayPrimaryGreen.x * 1000000), round(chain->hdr_metadata.displayPrimaryGreen.y * 1000000),
+            round(chain->hdr_metadata.displayPrimaryBlue.x * 1000000), round(chain->hdr_metadata.displayPrimaryBlue.y * 1000000),
+            round(chain->hdr_metadata.whitePoint.x * 1000000), round(chain->hdr_metadata.whitePoint.y * 1000000));
+   }
 
    struct wp_image_description_v1 *image_desc =
       wp_image_description_creator_params_v1_create(creator);
@@ -1198,6 +1234,14 @@ wsi_wl_swapchain_update_colorspace(struct wsi_wl_swapchain *chain)
    return VK_SUCCESS;
 }
 
+static void
+wsi_wl_swapchain_set_hdr_metadata(struct wsi_swapchain *wsi_chain,
+                                  const VkHdrMetadataEXT* pMetadata)
+{
+   struct wsi_wl_swapchain *chain = (struct wsi_wl_swapchain *)wsi_chain;
+   chain->hdr_metadata = *pMetadata;
+   chain->has_hdr_metadata = true;
+}
 
 static void
 presentation_handle_clock_id(void* data, struct wp_presentation *wp_presentation, uint32_t clk_id)
@@ -3418,6 +3462,7 @@ wsi_wl_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    chain->base.wait_for_present = wsi_wl_swapchain_wait_for_present;
    chain->base.present_mode = present_mode;
    chain->base.image_count = num_images;
+   chain->base.set_hdr_metadata = wsi_wl_swapchain_set_hdr_metadata;
    chain->extent = pCreateInfo->imageExtent;
    chain->vk_format = pCreateInfo->imageFormat;
    chain->buffer_type = buffer_type;
