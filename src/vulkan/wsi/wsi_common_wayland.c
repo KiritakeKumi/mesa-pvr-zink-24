@@ -1197,7 +1197,7 @@ wsi_wl_swapchain_update_colorspace(struct wsi_wl_swapchain *chain)
 
    wp_image_description_creator_params_v1_set_primaries_named(creator, primaries);
    wp_image_description_creator_params_v1_set_tf_named(creator, tf);
-   if (chain->has_hdr_metadata && display->color_features.extended_target_volume) {
+   if (chain->has_hdr_metadata) {
       wp_image_description_creator_params_v1_set_mastering_luminance(creator,
          round(chain->hdr_metadata.minLuminance * 10000), round(chain->hdr_metadata.maxLuminance));
       wp_image_description_creator_params_v1_set_max_cll(creator, round(chain->hdr_metadata.maxContentLightLevel));
@@ -1223,8 +1223,16 @@ wsi_wl_swapchain_update_colorspace(struct wsi_wl_swapchain *chain)
       if (ret < 0)
          return VK_ERROR_OUT_OF_DATE_KHR;
    }
-   if (cs.failed)
-      return VK_ERROR_SURFACE_LOST_KHR;
+   if (cs.failed) {
+      wp_image_description_v1_destroy(image_desc);
+      if (!display->color_features.extended_target_volume && chain->has_hdr_metadata) {
+         // try again without metadata, there's nothing else we can do
+         chain->has_hdr_metadata = false;
+         return wsi_wl_swapchain_update_colorspace(chain);
+      } else {
+         return VK_ERROR_SURFACE_LOST_KHR;
+      }
+   }
 
    wp_color_management_surface_v1_set_image_description(chain->wsi_wl_surface->color_surface,
                                                         image_desc,
