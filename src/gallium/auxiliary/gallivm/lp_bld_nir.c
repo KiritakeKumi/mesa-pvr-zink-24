@@ -1921,7 +1921,7 @@ visit_discard(struct lp_build_nir_context *bld_base,
               nir_intrinsic_instr *instr)
 {
    LLVMValueRef cond = NULL;
-   if (instr->intrinsic == nir_intrinsic_terminate_if) {
+   if (instr->intrinsic == nir_intrinsic_demote_if) {
       cond = get_src(bld_base, instr->src[0]);
       cond = cast_type(bld_base, cond, nir_type_int, 32);
    }
@@ -2196,8 +2196,8 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
    case nir_intrinsic_load_helper_invocation:
       bld_base->helper_invocation(bld_base, &result[0]);
       break;
-   case nir_intrinsic_terminate_if:
-   case nir_intrinsic_terminate:
+   case nir_intrinsic_demote_if:
+   case nir_intrinsic_demote:
       visit_discard(bld_base, instr);
       break;
    case nir_intrinsic_emit_vertex:
@@ -3025,6 +3025,16 @@ lp_build_opt_nir(struct nir_shader *nir)
    if (nir->info.stage == MESA_SHADER_TASK) {
       nir_lower_task_shader_options ts_opts = { 0 };
       NIR_PASS_V(nir, nir_lower_task_shader, ts_opts);
+   }
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+      bool demote_progress = false;
+      NIR_PASS(demote_progress, nir, nir_lower_terminate_to_demote);
+      if (demote_progress) {
+         nir_shader_instructions_pass(nir, nir_lower_halt_to_return);
+         NIR_PASS(_, nir, nir_lower_returns);
+         NIR_PASS(_, nir, nir_opt_dead_cf);
+      }
    }
 
    NIR_PASS_V(nir, nir_lower_flrp, 16|32|64, true);
