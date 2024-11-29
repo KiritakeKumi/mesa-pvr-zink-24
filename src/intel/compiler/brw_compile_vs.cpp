@@ -13,7 +13,7 @@
 using namespace brw;
 
 static void
-brw_assign_vs_urb_setup(fs_visitor &s)
+brw_assign_vs_urb_setup(fs_visitor &s, unsigned nr_attribute_regs)
 {
    struct brw_vs_prog_data *vs_prog_data = brw_vs_prog_data(s.prog_data);
 
@@ -31,7 +31,7 @@ brw_assign_vs_urb_setup(fs_visitor &s)
 }
 
 static bool
-run_vs(fs_visitor &s)
+run_vs(fs_visitor &s, unsigned nr_attribute_regs)
 {
    assert(s.stage == MESA_SHADER_VERTEX);
 
@@ -49,7 +49,7 @@ run_vs(fs_visitor &s)
    brw_optimize(s);
 
    s.assign_curb_setup();
-   brw_assign_vs_urb_setup(s);
+   brw_assign_vs_urb_setup(s, nr_attribute_regs);
 
    brw_lower_3src_null_dest(s);
    brw_workaround_memory_fence_before_eot(s);
@@ -94,8 +94,9 @@ brw_compile_vs(const struct brw_compiler *compiler,
       ((1 << nir->info.cull_distance_array_size) - 1) <<
       nir->info.clip_distance_array_size;
 
-   unsigned nr_attribute_slots = util_bitcount64(prog_data->inputs_read);
+   unsigned nr_input_attribute_slots = util_bitcount64(prog_data->inputs_read);
 
+   unsigned nr_svgs_attribute_slots = 0;
    /* gl_VertexID and gl_InstanceID are system values, but arrive via an
     * incoming vertex attribute.  So, add an extra slot.
     */
@@ -103,13 +104,13 @@ brw_compile_vs(const struct brw_compiler *compiler,
        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_BASE_INSTANCE) ||
        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_VERTEX_ID_ZERO_BASE) ||
        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_INSTANCE_ID)) {
-      nr_attribute_slots++;
+      nr_svgs_attribute_slots++;
    }
 
    /* gl_DrawID and IsIndexedDraw share its very own vec4 */
    if (BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_DRAW_ID) ||
        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_IS_INDEXED_DRAW)) {
-      nr_attribute_slots++;
+      nr_svgs_attribute_slots++;
    }
 
    if (BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_IS_INDEXED_DRAW))
@@ -130,15 +131,18 @@ brw_compile_vs(const struct brw_compiler *compiler,
    if (BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_DRAW_ID))
       prog_data->uses_drawid = true;
 
-   prog_data->base.urb_read_length = DIV_ROUND_UP(nr_attribute_slots, 2);
-   prog_data->nr_attribute_slots = nr_attribute_slots;
+   prog_data->base.urb_read_length =
+      DIV_ROUND_UP(nr_input_attribute_slots + nr_svgs_attribute_slots, 2);
+   unsigned nr_attribute_regs =
+      4 * (nr_input_attribute_slots + nr_svgs_attribute_slots);
 
    /* Since vertex shaders reuse the same VUE entry for inputs and outputs
     * (overwriting the original contents), we need to make sure the size is
     * the larger of the two.
     */
    const unsigned vue_entries =
-      MAX2(nr_attribute_slots, (unsigned)prog_data->base.vue_map.num_slots);
+      MAX2(DIV_ROUND_UP(nr_attribute_regs, 4),
+           (unsigned)prog_data->base.vue_map.num_slots);
 
    prog_data->base.urb_entry_size = DIV_ROUND_UP(vue_entries, 4);
 
@@ -152,7 +156,7 @@ brw_compile_vs(const struct brw_compiler *compiler,
    fs_visitor v(compiler, &params->base, &key->base,
                 &prog_data->base.base, nir, dispatch_width,
                 params->base.stats != NULL, debug_enabled);
-   if (!run_vs(v)) {
+   if (!run_vs(v, nr_attribute_regs)) {
       params->base.error_str =
          ralloc_strdup(params->base.mem_ctx, v.fail_msg);
       return NULL;
