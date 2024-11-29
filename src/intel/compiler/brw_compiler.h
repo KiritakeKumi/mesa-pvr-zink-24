@@ -232,6 +232,10 @@ struct brw_base_prog_key {
 /** The program key for Vertex Shaders. */
 struct brw_vs_prog_key {
    struct brw_base_prog_key base;
+
+   bool vf_component_packing : 1;
+
+   uint32_t padding : 31;
 };
 
 /** The program key for Tessellation Control Shaders. */
@@ -1028,6 +1032,8 @@ struct brw_vs_prog_data {
    bool uses_firstvertex;
    bool uses_baseinstance;
    bool uses_drawid;
+
+   uint32_t vf_component_packing[4];
 };
 
 struct brw_tcs_prog_data
