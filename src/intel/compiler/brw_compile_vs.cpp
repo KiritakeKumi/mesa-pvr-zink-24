@@ -85,15 +85,49 @@ brw_nir_pack_vs_input(nir_shader *nir, struct brw_vs_prog_data *prog_data)
       }
    }
 
+   /* SKL PRMs, Vol 2a: Command Reference: Instructions,
+    * 3DSTATE_VF_COMPONENT_PACKING:
+    *
+    *    "At least one component of one "valid" Vertex Element must be
+    *     enabled."
+    */
+   if ((nir->info.inputs_read & BITFIELD64_MASK(32 + VERT_ATTRIB_GENERIC0)) == 0) {
+      if (prog_data->no_vf_compaction) {
+         attributes[VERT_ATTRIB_GENERIC0].is_used = true;
+         attributes[VERT_ATTRIB_GENERIC0].component_mask = 0x1;
+      } else if (!BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_IS_INDEXED_DRAW) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_FIRST_VERTEX) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_BASE_INSTANCE) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_VERTEX_ID_ZERO_BASE) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_INSTANCE_ID) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_DRAW_ID)) {
+         attributes[VERT_ATTRIB_GENERIC0].is_used = true;
+         attributes[VERT_ATTRIB_GENERIC0].component_mask = 0x1;
+      }
+   }
+
    /* Compute the register offsets */
    unsigned reg_offset = 0;
+   unsigned vertex_element = 0;
    for (unsigned a = 0; a < ARRAY_SIZE(attributes); a++) {
-      if (attributes[a].component_mask == 0)
+      if (!attributes[a].is_used)
          continue;
+
+      /* SKL PRMs, Vol 2a: Command Reference: Instructions,
+       * 3DSTATE_VF_COMPONENT_PACKING:
+       *
+       *    "No enable bits are provided for Vertex Elements [32-33],
+       *     and therefore no packing is performed on these elements (if
+       *     Valid, all 4 components are stored)."
+       */
+      if (vertex_element >= 32 ||
+          (prog_data->no_vf_compaction && a >= VERT_ATTRIB_GENERIC0 + 32))
+         attributes[a].component_mask = 0xf;
 
       attributes[a].reg_offset = reg_offset;
 
       reg_offset += util_bitcount(attributes[a].component_mask);
+      vertex_element++;
    }
 
    /* Remap inputs */
@@ -126,8 +160,8 @@ brw_nir_pack_vs_input(nir_shader *nir, struct brw_vs_prog_data *prog_data)
    }
 
    /* Generate the packing array */
-   unsigned vf_offset = 0;
-   for (unsigned a = 0; a < ARRAY_SIZE(attributes); a++) {
+   unsigned vf_element_count = 0;
+   for (unsigned a = 0; a < ARRAY_SIZE(attributes) && vf_element_count < 32; a++) {
       if (!attributes[a].is_used)
          continue;
 
@@ -144,22 +178,16 @@ brw_nir_pack_vs_input(nir_shader *nir, struct brw_vs_prog_data *prog_data)
       } else {
          mask = attributes[a].component_mask;
       }
-      prog_data->vf_component_packing[vf_offset / 8] |=
-         mask << (4 * (vf_offset % 8));
-      vf_offset++;
-   }
 
-   /* SKL PRMs, Vol 2a: Command Reference: Instructions,
-    * 3DSTATE_VF_COMPONENT_PACKING:
-    *
-    *    "At least one component of one "valid" Vertex Element must be
-    *     enabled."
-    */
-   if (prog_data->vf_component_packing[0] == 0 &&
-       prog_data->vf_component_packing[1] == 0 &&
-       prog_data->vf_component_packing[2] == 0 &&
-       prog_data->vf_component_packing[3] == 0)
-      prog_data->vf_component_packing[0] = 0x1;
+      if (prog_data->no_vf_compaction) {
+         prog_data->vf_component_packing[(a - VERT_ATTRIB_GENERIC0) / 8] |=
+            mask << (4 * ((a - VERT_ATTRIB_GENERIC0) % 8));
+      } else {
+         prog_data->vf_component_packing[vf_element_count / 8] |=
+            mask << (4 * (vf_element_count % 8));
+      }
+      vf_element_count++;
+   }
 
    return reg_offset;
 }
@@ -208,6 +236,8 @@ brw_compile_vs(const struct brw_compiler *compiler,
                                    params->base.debug_flag : DEBUG_VS);
    const unsigned dispatch_width = brw_geometry_stage_dispatch_width(compiler->devinfo);
 
+   assert(!key->no_vf_compaction || key->vf_component_packing);
+
    prog_data->base.base.stage = MESA_SHADER_VERTEX;
    prog_data->base.base.ray_queries = nir->info.ray_queries;
    prog_data->base.base.total_scratch = 0;
@@ -216,6 +246,7 @@ brw_compile_vs(const struct brw_compiler *compiler,
 
    prog_data->inputs_read = nir->info.inputs_read;
    prog_data->double_inputs_read = nir->info.vs.double_inputs;
+   prog_data->no_vf_compaction = key->no_vf_compaction;
 
    brw_nir_lower_vs_inputs(nir);
    brw_nir_lower_vue_outputs(nir);
