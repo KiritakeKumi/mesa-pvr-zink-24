@@ -745,6 +745,13 @@ agx_nir_lower_texture_early(nir_shader *s, bool support_lod_bias)
    return progress;
 }
 
+static bool
+should_lower_image_atomics(const nir_intrinsic_instr *intrin,
+                           const void *data)
+{
+   return true;
+}
+
 bool
 agx_nir_lower_texture(nir_shader *s)
 {
@@ -765,7 +772,8 @@ agx_nir_lower_texture(nir_shader *s)
    NIR_PASS(progress, s, nir_shader_intrinsics_pass, fence_image,
             nir_metadata_control_flow, NULL);
 
-   NIR_PASS(progress, s, nir_lower_image_atomics_to_global);
+   NIR_PASS(progress, s, nir_lower_image_atomics_to_global,
+            should_lower_image_atomics, NULL);
 
    NIR_PASS(progress, s, nir_shader_intrinsics_pass, legalize_image_lod,
             nir_metadata_control_flow, NULL);

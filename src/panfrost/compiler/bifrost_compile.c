@@ -5300,6 +5300,13 @@ bifrost_nir_lower_load_output(nir_shader *nir)
       nir_metadata_control_flow, NULL);
 }
 
+static bool
+should_lower_image_atomics(const nir_intrinsic_instr *intrin,
+                           const void *data)
+{
+   return true;
+}
+
 void
 bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
 {
@@ -5409,7 +5416,8 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
                .lower_index_to_offset = true,
             });
 
-   NIR_PASS(_, nir, nir_lower_image_atomics_to_global);
+   NIR_PASS(_, nir, nir_lower_image_atomics_to_global,
+            should_lower_image_atomics, NULL);
 
    /* on bifrost, lower MSAA load/stores to 3D load/stores */
    if (pan_arch(gpu_id) < 9)
