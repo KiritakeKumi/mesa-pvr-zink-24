@@ -253,6 +253,10 @@ struct amdgpu_winsys {
    struct hash_table *bo_export_table;
    simple_mtx_t bo_export_table_lock;
 
+   /* For storing the vma_handles of vma cut-outs */
+   struct hash_table_u64 *vma_allocs;
+   simple_mtx_t vma_allocs_lock;
+
    /* Since most winsys functions require struct radeon_winsys *, dummy_sws.base is used
     * for invoking them because sws_list can be NULL.
     */

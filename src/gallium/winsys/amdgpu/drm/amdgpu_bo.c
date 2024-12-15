@@ -253,11 +253,18 @@ void amdgpu_bo_destroy(struct amdgpu_winsys *aws, struct pb_buffer_lean *_buf)
    _mesa_hash_table_remove_key(aws->bo_export_table, bo->bo.abo);
 
    if (bo->b.base.placement & RADEON_DOMAIN_VRAM_GTT) {
-      amdgpu_bo_va_op_common(aws, amdgpu_winsys_bo(_buf), bo->kms_handle, true, NULL, 0,
-                             bo->b.base.size, amdgpu_va_get_start_addr(bo->va_handle),
-                             AMDGPU_VM_PAGE_READABLE | AMDGPU_VM_PAGE_WRITEABLE |
-                                AMDGPU_VM_PAGE_EXECUTABLE, AMDGPU_VA_OP_UNMAP);
-      ac_drm_va_range_free(bo->va_handle);
+      if (bo->va_handle) {
+         amdgpu_bo_va_op_common(aws, amdgpu_winsys_bo(_buf), bo->kms_handle, true, NULL, 0,
+                                bo->b.base.size, amdgpu_va_get_start_addr(bo->va_handle),
+                                AMDGPU_VM_PAGE_READABLE | AMDGPU_VM_PAGE_WRITEABLE |
+                                   AMDGPU_VM_PAGE_EXECUTABLE, AMDGPU_VA_OP_UNMAP);
+         ac_drm_va_range_free(bo->va_handle);
+      } else if (bo->va) {
+         amdgpu_bo_va_op_common(aws, amdgpu_winsys_bo(_buf), bo->kms_handle, true, NULL, 0,
+                                bo->b.base.size, bo->va,
+                                AMDGPU_VM_PAGE_READABLE | AMDGPU_VM_PAGE_WRITEABLE |
+                                   AMDGPU_VM_PAGE_EXECUTABLE, AMDGPU_VA_OP_UNMAP);
+      }
    }
 
    simple_mtx_unlock(&aws->bo_export_table_lock);
@@ -666,7 +673,7 @@ static struct amdgpu_winsys_bo *amdgpu_create_bo(struct amdgpu_winsys *aws,
    uint32_t kms_handle = 0;
    ac_drm_bo_export(aws->dev, buf_handle, amdgpu_bo_handle_type_kms, &kms_handle);
 
-   if (initial_domain & RADEON_DOMAIN_VRAM_GTT) {
+   if (initial_domain & RADEON_DOMAIN_VRAM_GTT && !(flags & RADEON_FLAG_NO_VMA)) {
       unsigned va_gap_size = aws->check_vm ? MAX2(4 * alignment, 64 * 1024) : 0;
 
       r = ac_drm_va_range_alloc(aws->dev, amdgpu_gpu_va_range_general,
@@ -1467,7 +1474,7 @@ amdgpu_bo_create(struct amdgpu_winsys *aws,
    int heap = radeon_get_heap_index(domain, flags);
 
    /* Sub-allocate small buffers from slabs. */
-   if (heap >= 0 && size <= max_slab_entry_size) {
+   if (heap >= 0 && size <= max_slab_entry_size && !(flags & RADEON_FLAG_NO_SUBALLOC)) {
       struct pb_slab_entry *entry;
       unsigned alloc_size = size;
 
@@ -1910,7 +1917,11 @@ uint64_t amdgpu_bo_get_va(struct pb_buffer_lean *buf)
    } else if (bo->type == AMDGPU_BO_SPARSE) {
       return amdgpu_va_get_start_addr(get_sparse_bo(bo)->va_handle);
    } else {
-      return amdgpu_va_get_start_addr(get_real_bo(bo)->va_handle);
+      struct amdgpu_bo_real *real = get_real_bo(bo);
+      if (real->va_handle)
+         return amdgpu_va_get_start_addr(real->va_handle);
+      else
+         return real->va;
    }
 }
 
@@ -1924,6 +1935,68 @@ static void amdgpu_buffer_destroy(struct radeon_winsys *rws, struct pb_buffer_le
       amdgpu_bo_sparse_destroy(rws, buf);
    else
       amdgpu_bo_destroy_or_cache(rws, buf);
+}
+
+static void amdgpu_va_range(struct radeon_winsys *rws, uint64_t *start, uint64_t *end)
+{
+   struct amdgpu_winsys *aws = amdgpu_winsys(rws);
+   ac_drm_va_range_query(aws->dev, amdgpu_gpu_va_range_general, start, end);
+}
+
+static int amdgpu_alloc_vm(struct radeon_winsys *rws, uint64_t start, uint64_t size)
+{
+   struct amdgpu_winsys *aws = amdgpu_winsys(rws);
+
+   uint64_t allocated;
+   amdgpu_va_handle handle;
+   int r = ac_drm_va_range_alloc(aws->dev, amdgpu_gpu_va_range_general, size, 0, start, &allocated,
+                                 &handle, 0);
+
+   if (!r) {
+      simple_mtx_lock(&aws->vma_allocs_lock);
+      _mesa_hash_table_u64_insert(aws->vma_allocs, start, handle);
+      simple_mtx_unlock(&aws->vma_allocs_lock);
+   }
+
+   return r;
+}
+
+static void amdgpu_free_vm(struct radeon_winsys *rws, uint64_t start)
+{
+   struct amdgpu_winsys *aws = amdgpu_winsys(rws);
+
+   simple_mtx_lock(&aws->vma_allocs_lock);
+   amdgpu_va_handle handle = _mesa_hash_table_u64_search(aws->vma_allocs, start);
+   if (handle) {
+      amdgpu_va_range_free(handle);
+      _mesa_hash_table_u64_remove(aws->vma_allocs, start);
+   }
+   simple_mtx_unlock(&aws->vma_allocs_lock);
+}
+
+static int amdgpu_buffer_assign_vma(struct radeon_winsys *rws, struct pb_buffer_lean *buf,
+                                    uint64_t va)
+{
+   struct amdgpu_winsys *aws = amdgpu_winsys(rws);
+   struct amdgpu_winsys_bo *wbo = amdgpu_winsys_bo(buf);
+   struct amdgpu_bo_real *bo = get_real_bo(wbo);
+   unsigned vm_flags = AMDGPU_VM_PAGE_READABLE | AMDGPU_VM_PAGE_WRITEABLE;
+
+   // if (flags & RADEON_FLAG_GL2_BYPASS)
+   //    vm_flags |= AMDGPU_VM_MTYPE_UC;
+
+   int r;
+   if (va)
+      r = amdgpu_bo_va_op_common(aws, NULL, bo->kms_handle, false, &bo->vm_timeline_point,
+                                 0, bo->b.base.size, va, vm_flags, AMDGPU_VA_OP_MAP);
+   else
+      r = amdgpu_bo_va_op_common(aws, wbo, bo->kms_handle, true, &bo->vm_timeline_point,
+                                 0, bo->b.base.size, bo->va, vm_flags, AMDGPU_VA_OP_UNMAP);
+
+   if (!r)
+      bo->va = va;
+
+   return r;
 }
 
 void amdgpu_bo_init_functions(struct amdgpu_screen_winsys *sws)
@@ -1945,4 +2018,8 @@ void amdgpu_bo_init_functions(struct amdgpu_screen_winsys *sws)
    sws->base.buffer_get_virtual_address = amdgpu_bo_get_va;
    sws->base.buffer_get_initial_domain = amdgpu_bo_get_initial_domain;
    sws->base.buffer_get_flags = amdgpu_bo_get_flags;
+   sws->base.va_range = amdgpu_va_range;
+   sws->base.alloc_vm = amdgpu_alloc_vm;
+   sws->base.free_vm = amdgpu_free_vm;
+   sws->base.buffer_assign_vma = amdgpu_buffer_assign_vma;
 }
