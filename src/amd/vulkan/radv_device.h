@@ -152,6 +152,11 @@ struct radv_pso_cache_stats {
    uint32_t misses;
 };
 
+struct radv_device_memory_report {
+   PFN_vkDeviceMemoryReportCallbackEXT callback;
+   void *data;
+};
+
 struct radv_device {
    struct vk_device vk;
 
@@ -323,6 +328,9 @@ struct radv_device {
    struct radv_pso_cache_stats pso_cache_stats[RADV_PIPELINE_TYPE_COUNT];
 
    struct radv_address_binding_tracker *addr_binding_tracker;
+
+   struct radv_device_memory_report *memory_reports;
+   uint32_t memory_report_count;
 };
 
 VK_DEFINE_HANDLE_CASTS(radv_device, vk.base, VkDevice, VK_OBJECT_TYPE_DEVICE)

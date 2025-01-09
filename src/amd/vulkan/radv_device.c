@@ -1071,6 +1071,7 @@ static void
 radv_destroy_device(struct radv_device *device, const VkAllocationCallbacks *pAllocator)
 {
    radv_device_finish_perf_counter(device);
+   radv_device_memory_report_fini(device);
 
    if (device->gfx_init)
       radv_bo_destroy(device, NULL, device->gfx_init);
@@ -1121,6 +1122,48 @@ radv_destroy_device(struct radv_device *device, const VkAllocationCallbacks *pAl
    vk_free(&device->vk.alloc, device);
 }
 
+static void
+radv_device_memory_report_fini(struct radv_device *device)
+{
+   vk_free(&device->vk.alloc, device->memory_reports);
+}
+
+static VkResult
+radv_device_memory_report_init(struct radv_device *device,
+                               const VkDeviceCreateInfo *pCreateInfo)
+{
+   if (!device->vk.enabled_features.deviceMemoryReport)
+      return VK_SUCCESS;
+
+   uint32_t count = 0;
+   vk_foreach_struct_const(pnext, pCreateInfo->pNext) {
+      if (pnext->sType == VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT)
+         count++;
+   }
+
+   struct radv_device_memory_report *mem_reports = NULL;
+   if (count) {
+      mem_reports = vk_alloc(&device->vk.alloc, sizeof(*mem_reports) * count,
+                             8, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (!mem_reports)
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+   }
+
+   count = 0;
+   vk_foreach_struct_const(pnext, pCreateInfo->pNext) {
+      if (pnext->sType == VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT) {
+         const struct VkDeviceDeviceMemoryReportCreateInfoEXT *report = (void *)pnext;
+	 mem_reports[count].callback = report->pfnUserCallback;
+	 mem_reports[count].data = report->pUserData;
+	 count++;
+      }
+   }
+
+   device->memory_report_count = count;
+   device->memory_reports = mem_reports;
+   return VK_SUCCESS;
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
                   const VkAllocationCallbacks *pAllocator, VkDevice *pDevice)
@@ -1154,6 +1197,10 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
       vk_free(&device->vk.alloc, device);
       return result;
    }
+
+   result = radv_device_memory_report_init(device, pCreateInfo);
+   if (result != VK_SUCCESS)
+      goto fail;
 
    device->vk.get_timestamp = get_timestamp;
    device->vk.capture_trace = capture_trace;
