@@ -1197,6 +1197,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
       vk_free(&device->vk.alloc, device);
       return result;
    }
+   device->vk.enabled_features.deviceMemoryReport = true;
 
    result = radv_device_memory_report_init(device, pCreateInfo);
    if (result != VK_SUCCESS)
