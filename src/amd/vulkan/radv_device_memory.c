@@ -32,6 +32,33 @@ radv_device_memory_finish(struct radv_device_memory *mem)
    vk_object_base_finish(&mem->base);
 }
 
+static void
+radv_device_memory_emit_report(struct radv_device *device,
+                               struct radv_device_memory *mem,
+                               bool is_alloc,
+                               VkResult result)
+{
+   if (likely(!device->memory_reports))
+      return;
+
+   VkDeviceMemoryReportEventTypeEXT type;
+   if (result != VK_SUCCESS) {
+      type = VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATION_FAILED_EXT;
+   } else if (is_alloc) {
+      type = mem->import_handle_type
+             ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_IMPORT_EXT
+             : VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT;
+   } else {
+      type = mem->import_handle_type
+             ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_UNIMPORT_EXT
+             : VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT;
+   }
+
+   radv_device_emit_device_memory_report(device, type, mem->bo->obj_id, mem->bo->size,
+                                         VK_OBJECT_TYPE_DEVICE_MEMORY,
+					 (uintptr_t)(mem), mem->heap_index);
+}
+
 void
 radv_free_memory(struct radv_device *device, const VkAllocationCallbacks *pAllocator, struct radv_device_memory *mem)
 {
@@ -261,10 +288,11 @@ radv_alloc_memory(struct radv_device *device, const VkMemoryAllocateInfo *pAlloc
    *pMem = radv_device_memory_to_handle(mem);
    radv_rmv_log_heap_create(device, *pMem, is_internal, flags_info ? flags_info->flags : 0);
 
-   return VK_SUCCESS;
-
 fail:
-   radv_free_memory(device, pAllocator, mem);
+   radv_device_memory_emit_report(device, mem, /* is_alloc */ true, result);
+
+   if (result != VK_SUCCESS)
+      radv_free_memory(device, pAllocator, mem);
 
    return result;
 }
@@ -282,6 +310,9 @@ radv_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbac
 {
    VK_FROM_HANDLE(radv_device, device, _device);
    VK_FROM_HANDLE(radv_device_memory, mem, _mem);
+
+   if (mem)
+      radv_device_memory_emit_report(device, mem, /* is_alloc */ false, VK_SUCCESS);
 
    radv_free_memory(device, pAllocator, mem);
 }
