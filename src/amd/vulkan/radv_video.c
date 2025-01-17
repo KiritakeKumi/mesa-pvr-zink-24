@@ -2089,7 +2089,7 @@ rvcn_dec_message_decode(struct radv_cmd_buffer *cmd_buffer, struct radv_video_se
 
    for (int i = 0; i < frame_info->referenceSlotCount; i++) {
       int32_t slot_idx = frame_info->pReferenceSlots[i].slotIndex;
-      assert(slot_idx >= 0 && slot_idx < 16);
+      assert(slot_idx >= 0 && slot_idx < NUM_H2645_REFS + 1);
       struct radv_image_view *f_dpb_iv =
          radv_image_view_from_handle(frame_info->pReferenceSlots[i].pPictureResource->imageViewBinding);
       assert(f_dpb_iv != NULL);
