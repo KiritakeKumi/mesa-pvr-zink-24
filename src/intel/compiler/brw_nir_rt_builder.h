@@ -742,6 +742,7 @@ struct brw_nir_rt_mem_ray_defs {
    nir_def *ray_mask;
 
    /* Valid on Xe3+ */
+   nir_def *hit_group_index;
    nir_def *miss_shader_index;
    nir_def *internal_ray_flags;
 };
@@ -872,6 +873,9 @@ brw_nir_rt_store_mem_ray(nir_builder *b,
       assert_def_size(defs->miss_shader_index, 1, 16);
       assert_def_size(defs->shader_index_multiplier, 1, 32);
 
+      brw_nir_rt_store(b, nir_iadd_imm(b, ray_addr, 52), 8,
+            defs->hit_group_index, 0x1 /* write mask */);
+
       /* TODO: Need to handle internalRayFlags since we are overwriting top 8
        * bits while writing shaderIndexMultiplier.
        */
@@ -997,6 +1001,7 @@ brw_nir_rt_load_mem_ray_from_addr(nir_builder *b,
       defs->ray_mask =
          nir_iand_imm(b, nir_unpack_32_2x16_split_y(b, nir_channel(b, data[3], 0)),
                       0xff);
+      defs->hit_group_index = nir_channel(b, data[3], 1);
       defs->miss_shader_index =
          nir_unpack_32_2x16_split_x(b, nir_channel(b, data[3], 2));
       defs->shader_index_multiplier =

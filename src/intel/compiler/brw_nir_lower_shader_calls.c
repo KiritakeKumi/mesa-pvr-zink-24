@@ -241,6 +241,7 @@ lower_shader_trace_ray_instr(struct nir_builder *b, nir_instr *instr, void *data
    };
 
    if (devinfo->ver >= 30) {
+      ray_defs.hit_group_index = sbt_offset;
       ray_defs.miss_shader_index = nir_u2u16(b, miss_index);
    } else {
       ray_defs.hit_group_sr_base_ptr = hit_sbt_addr;
