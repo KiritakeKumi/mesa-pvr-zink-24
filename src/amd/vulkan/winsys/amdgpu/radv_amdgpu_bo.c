@@ -790,6 +790,7 @@ radv_amdgpu_winsys_bo_from_fd(struct radeon_winsys *_ws, int fd, unsigned priori
    bo->base.size = result.alloc_size;
    bo->priority = priority;
    bo->cpu_map = NULL;
+   bo->base.obj_id = fd;
 
    if (bo->base.initial_domain & RADEON_DOMAIN_VRAM)
       p_atomic_add(&ws->allocated_vram, align64(bo->base.size, ws->info.gart_page_size));
