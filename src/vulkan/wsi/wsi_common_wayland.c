@@ -975,57 +975,59 @@ wsi_wl_display_determine_colorspaces(struct wsi_wl_display *display)
    if (!display->color_manager)
       return 0;
 
-   struct u_vector *tfs = &display->color_transfer_funcs;
-   unsigned int *ps;
-   u_vector_foreach(ps, &display->color_primaries) {
-      switch(*ps) {
-      case WP_COLOR_MANAGER_V1_PRIMARIES_SRGB:
-         if (vector_search(tfs, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_BT709) &&
-            !wsi_wl_display_add_colorspace(display, VK_COLOR_SPACE_BT709_NONLINEAR_EXT)) {
-            return -1;
-         }
-         if (vector_search(tfs, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR) &&
-            !wsi_wl_display_add_colorspace(display, VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT)) {
-            return -1;
-         }
-         break;
-      case WP_COLOR_MANAGER_V1_PRIMARIES_DISPLAY_P3:
-         if (vector_search(tfs, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_SRGB) &&
-            !wsi_wl_display_add_colorspace(display, VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT)) {
-            return -1;
-         }
-         if (vector_search(tfs, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR) &&
-            !wsi_wl_display_add_colorspace(display, VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT)) {
-            return -1;
-         }
-         break;
-      case WP_COLOR_MANAGER_V1_PRIMARIES_DCI_P3:
-         /* The wayland protocol doesn't have an enum for the
-            DCI-P3 non-linear transfer function. */
-         if (vector_search(tfs, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR) &&
-            !wsi_wl_display_add_colorspace(display, VK_COLOR_SPACE_DCI_P3_LINEAR_EXT)) {
-            return -1;
-         }
-         break;
-      case WP_COLOR_MANAGER_V1_PRIMARIES_BT2020:
-         if (vector_search(tfs, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ) &&
-            !wsi_wl_display_add_colorspace(display, VK_COLOR_SPACE_HDR10_ST2084_EXT)) {
-            return -1;
-         }
-         if (vector_search(tfs, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_HLG) &&
-            !wsi_wl_display_add_colorspace(display, VK_COLOR_SPACE_HDR10_HLG_EXT)) {
-            return -1;
-         }
-         if (vector_search(tfs, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR) &&
-            !wsi_wl_display_add_colorspace(display, VK_COLOR_SPACE_BT2020_LINEAR_EXT)) {
-            return -1;
-         }
-         break;
-      default:
-         break;
-      }
-   }
+   struct Colorspace {
+      VkColorSpaceKHR colorspace;
+      enum wp_color_manager_v1_primaries primaries;
+      enum wp_color_manager_v1_transfer_function tf;
+   };
+   struct Colorspace colorspaces[] = {
+      {
+         .colorspace = VK_COLOR_SPACE_BT709_NONLINEAR_EXT,
+         .primaries = WP_COLOR_MANAGER_V1_PRIMARIES_SRGB,
+         .tf = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_BT709,
+      },
+      {
+          .colorspace = VK_COLOR_SPACE_BT709_NONLINEAR_EXT,
+          .primaries = WP_COLOR_MANAGER_V1_PRIMARIES_SRGB,
+          .tf = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR,
+      },
+      {
+          .colorspace = VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT,
+          .primaries = WP_COLOR_MANAGER_V1_PRIMARIES_DISPLAY_P3,
+          .tf = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR,
+      },
+      {
+          .colorspace = VK_COLOR_SPACE_DCI_P3_LINEAR_EXT,
+          .primaries = WP_COLOR_MANAGER_V1_PRIMARIES_DCI_P3,
+          .tf = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR,
+      },
+      {
+          .colorspace = VK_COLOR_SPACE_HDR10_ST2084_EXT,
+          .primaries = WP_COLOR_MANAGER_V1_PRIMARIES_BT2020,
+          .tf = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ,
+      },
+      {
+          .colorspace = VK_COLOR_SPACE_HDR10_HLG_EXT,
+          .primaries = WP_COLOR_MANAGER_V1_PRIMARIES_BT2020,
+          .tf = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_HLG,
+      },
+      {
+          .colorspace = VK_COLOR_SPACE_BT2020_LINEAR_EXT,
+          .primaries = WP_COLOR_MANAGER_V1_PRIMARIES_BT2020,
+          .tf = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR,
+      },
+   };
 
+   struct u_vector *tfs = &display->color_transfer_funcs;
+   struct u_vector *primaries = &display->color_primaries;
+   for (int i = 0; i < sizeof(colorspaces) / sizeof(struct Colorspace); i++) {
+      if (!vector_search(primaries, colorspaces[i].primaries))
+         continue;
+      if (!vector_search(tfs, colorspaces[i].tf))
+         continue;
+      if (!wsi_wl_display_add_colorspace(display, colorspaces[i].colorspace))
+         return -1;
+   }
    return 0;
 }
 
