@@ -166,6 +166,7 @@ struct radeon_winsys_bo {
    /* buffer is added to the BO list of all submissions */
    bool use_global_list;
    enum radeon_bo_domain initial_domain;
+   uint64_t obj_id;
 };
 
 struct radv_winsys_submit_info {

@@ -152,6 +152,11 @@ struct radv_pso_cache_stats {
    uint32_t misses;
 };
 
+struct radv_device_memory_report {
+   PFN_vkDeviceMemoryReportCallbackEXT callback;
+   void *data;
+};
+
 struct radv_device {
    struct vk_device vk;
 
@@ -323,9 +328,35 @@ struct radv_device {
    struct radv_pso_cache_stats pso_cache_stats[RADV_PIPELINE_TYPE_COUNT];
 
    struct radv_address_binding_tracker *addr_binding_tracker;
+
+   struct radv_device_memory_report *memory_reports;
+   uint32_t memory_report_count;
 };
 
 VK_DEFINE_HANDLE_CASTS(radv_device, vk.base, VkDevice, VK_OBJECT_TYPE_DEVICE)
+
+static inline void
+radv_device_emit_device_memory_report(struct radv_device *device,
+                                      VkDeviceMemoryReportEventTypeEXT type,
+                                      uint64_t mem_obj_id,
+                                      VkDeviceSize size,
+                                      VkObjectType obj_type,
+                                      uint64_t obj_handle,
+                                      uint32_t heap_index)
+{
+   assert(device->memory_reports);
+   const VkDeviceMemoryReportCallbackDataEXT report = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_MEMORY_REPORT_CALLBACK_DATA_EXT,
+      .type = type,
+      .memoryObjectId = mem_obj_id,
+      .size = size,
+      .objectType = obj_type,
+      .objectHandle = obj_handle,
+      .heapIndex = heap_index,
+   };
+   for (uint32_t i = 0; i < device->memory_report_count; i++)
+      device->memory_reports[i].callback(&report, device->memory_reports[i].data);
+}
 
 static inline struct radv_physical_device *
 radv_device_physical(const struct radv_device *dev)
