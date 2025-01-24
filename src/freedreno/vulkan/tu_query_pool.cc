@@ -1874,11 +1874,15 @@ tu_EnumeratePhysicalDeviceQueueFamilyPerformanceQueryCountersKHR(
    VK_OUTARRAY_MAKE_TYPED(VkPerformanceCounterDescriptionKHR, out_desc,
                           pCounterDescriptions, &desc_count);
 
+   VkPerformanceCounterScopeKHR scope = VK_PERFORMANCE_COUNTER_SCOPE_COMMAND_BUFFER_KHR;
+   if (TU_DEBUG(RENDERDOC))
+      scope = VK_PERFORMANCE_COUNTER_SCOPE_COMMAND_KHR;
+
    for (int i = 0; i < group_count; i++) {
       for (int j = 0; j < group[i].num_countables; j++) {
 
          vk_outarray_append_typed(VkPerformanceCounterKHR, &out, counter) {
-            counter->scope = VK_PERFORMANCE_COUNTER_SCOPE_COMMAND_BUFFER_KHR;
+            counter->scope = scope;
             counter->unit =
                   fd_perfcntr_type_to_vk_unit[group[i].countables[j].query_type];
             counter->storage =

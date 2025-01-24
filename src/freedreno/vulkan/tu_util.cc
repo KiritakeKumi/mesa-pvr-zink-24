@@ -46,6 +46,7 @@ static const struct debug_control tu_debug_options[] = {
    { "noconcurrentresolves", TU_DEBUG_NO_CONCURRENT_RESOLVES },
    { "noconcurrentunresolves", TU_DEBUG_NO_CONCURRENT_UNRESOLVES },
    { "dumpas", TU_DEBUG_DUMPAS },
+   { "renderdoc", TU_DEBUG_RENDERDOC },
    { NULL, 0 }
 };
 
