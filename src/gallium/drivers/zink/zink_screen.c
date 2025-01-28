@@ -3015,6 +3015,9 @@ init_driver_workarounds(struct zink_screen *screen)
       break;
    }
 
+   if (zink_driverid(screen) == VK_DRIVER_ID_MESA_NVK)
+      screen->resizable_bar = false;
+
    if (!screen->resizable_bar)
       screen->info.have_EXT_host_image_copy = false;
 }
