@@ -2304,11 +2304,17 @@ impl<'a> ShaderFromNir<'a> {
 
                 let dst = b.alloc_ssa(RegFile::GPR, comps);
 
+                let order = if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
+                } else {
+                    MemOrder::Strong(MemScope::CTA)
+                };
+
                 b.push_op(OpSuLd {
                     dst: dst.into(),
                     fault: Dst::None,
                     image_dim: dim,
-                    mem_order: MemOrder::Strong(MemScope::System),
+                    mem_order: order,
                     mem_eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                     mask: (1 << comps) - 1,
@@ -2330,11 +2336,17 @@ impl<'a> ShaderFromNir<'a> {
                 let dst = b.alloc_ssa(RegFile::GPR, comps - 1);
                 let fault = b.alloc_ssa(RegFile::Pred, 1);
 
+                let order = if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
+                } else {
+                    MemOrder::Strong(MemScope::CTA)
+                };
+
                 b.push_op(OpSuLd {
                     dst: dst.into(),
                     fault: fault.into(),
                     image_dim: dim,
-                    mem_order: MemOrder::Strong(MemScope::System),
+                    mem_order: order,
                     mem_eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                     mask: (1 << (comps - 1)) - 1,
@@ -2361,9 +2373,15 @@ impl<'a> ShaderFromNir<'a> {
                 assert!(srcs[3].bit_size() == 32);
                 assert!(comps == 1 || comps == 2 || comps == 4);
 
+                let order = if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
+                } else {
+                    MemOrder::Strong(MemScope::CTA)
+                };
+
                 b.push_op(OpSuSt {
                     image_dim: dim,
-                    mem_order: MemOrder::Strong(MemScope::System),
+                    mem_order: order,
                     mem_eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                     mask: (1 << comps) - 1,
