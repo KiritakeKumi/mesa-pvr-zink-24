@@ -1875,6 +1875,8 @@ try_blorp_blit(struct blorp_batch *batch,
                struct blt_coords *coords)
 {
    const struct intel_device_info *devinfo = batch->blorp->isl_dev->info;
+   const bool compressed_cps_surf = isl_surf_usage_is_cpb(params->dst.surf.usage) &&
+                                    isl_aux_usage_has_compression(params->dst.aux_usage);
 
    if (params->dst.surf.usage & ISL_SURF_USAGE_DEPTH_BIT) {
       if (devinfo->ver >= 7) {
@@ -1889,7 +1891,7 @@ try_blorp_blit(struct blorp_batch *batch,
       } else {
          key->dst_usage = ISL_SURF_USAGE_RENDER_TARGET_BIT;
       }
-   } else if (params->dst.surf.usage & ISL_SURF_USAGE_STENCIL_BIT) {
+   } else if (params->dst.surf.usage & ISL_SURF_USAGE_STENCIL_BIT || compressed_cps_surf) {
       assert(params->dst.surf.format == ISL_FORMAT_R8_UINT);
       if (devinfo->ver >= 9 && !(batch->flags & BLORP_BATCH_USE_COMPUTE)) {
          key->dst_usage = ISL_SURF_USAGE_STENCIL_BIT;
