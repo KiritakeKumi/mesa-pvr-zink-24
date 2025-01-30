@@ -426,6 +426,7 @@ pub extern "C" fn nak_compile_shader(
     pass!(s, opt_dce);
     pass!(s, opt_out);
     pass!(s, legalize);
+    pass!(s, opt_instr_sched_prepass);
     pass!(s, assign_regs);
     pass!(s, lower_par_copies);
     pass!(s, lower_copy_swap);
