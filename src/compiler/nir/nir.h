@@ -5278,6 +5278,7 @@ unsigned nir_shader_index_vars(nir_shader *shader, nir_variable_mode modes);
 unsigned nir_function_impl_index_vars(nir_function_impl *impl);
 
 void nir_print_shader(nir_shader *shader, FILE *fp);
+void nir_print_function_body(nir_function_impl *impl, FILE *fp);
 void nir_print_shader_annotated(nir_shader *shader, FILE *fp, struct hash_table *errors);
 void nir_print_instr(const nir_instr *instr, FILE *fp);
 void nir_print_deref(const nir_deref_instr *deref, FILE *fp);
@@ -5405,18 +5406,21 @@ should_print_nir(UNUSED nir_shader *shader)
       }                                                                 \
    } while (0)
 
-#define NIR_PASS(progress, nir, pass, ...) _PASS(pass, nir, {   \
-   nir_metadata_set_validation_flag(nir);                       \
-   if (should_print_nir(nir))                                   \
-      printf("%s\n", #pass);                                    \
-   if (pass(nir, ##__VA_ARGS__)) {                              \
-      nir_validate_shader(nir, "after " #pass " in " __FILE__); \
-      UNUSED bool _;                                            \
-      progress = true;                                          \
-      if (should_print_nir(nir))                                \
-         nir_print_shader(nir, stdout);                         \
-      nir_metadata_check_validation_flag(nir);                  \
-   }                                                            \
+#define NIR_STRINGIZE_INNER(x) #x
+#define NIR_STRINGIZE(x)       NIR_STRINGIZE_INNER(x)
+
+#define NIR_PASS(progress, nir, pass, ...) _PASS(pass, nir, {                               \
+   nir_metadata_set_validation_flag(nir);                                                   \
+   if (should_print_nir(nir))                                                               \
+      printf("%s\n", #pass);                                                                \
+   if (pass(nir, ##__VA_ARGS__)) {                                                          \
+      nir_validate_shader(nir, "after " #pass " in " __FILE__ ":" NIR_STRINGIZE(__LINE__)); \
+      UNUSED bool _;                                                                        \
+      progress = true;                                                                      \
+      if (should_print_nir(nir))                                                            \
+         nir_print_shader(nir, stdout);                                                     \
+      nir_metadata_check_validation_flag(nir);                                              \
+   }                                                                                        \
 })
 
 #define NIR_PASS_V(nir, pass, ...) _PASS(pass, nir, {        \
@@ -5580,10 +5584,10 @@ bool nir_split_struct_vars(nir_shader *shader, nir_variable_mode modes);
 bool nir_lower_returns_impl(nir_function_impl *impl);
 bool nir_lower_returns(nir_shader *shader);
 
-void nir_inline_function_impl(struct nir_builder *b,
-                              const nir_function_impl *impl,
-                              nir_def **params,
-                              struct hash_table *shader_var_remap);
+nir_def *nir_inline_function_impl(struct nir_builder *b,
+                                  const nir_function_impl *impl,
+                                  nir_def **params,
+                                  struct hash_table *shader_var_remap);
 bool nir_inline_functions(nir_shader *shader);
 void nir_cleanup_functions(nir_shader *shader);
 bool nir_link_shader_functions(nir_shader *shader,
