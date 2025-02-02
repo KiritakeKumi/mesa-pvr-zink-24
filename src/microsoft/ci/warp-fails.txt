@@ -7,3 +7,9 @@ dEQP-VK.api.driver_properties.conformance_version,Fail
 dEQP-VK.info.device_extensions,Fail
 dEQP-VK.wsi.win32.swapchain.create.composite_alpha,Fail
 dEQP-VK.wsi.win32.swapchain.simulate_oom.composite_alpha,Fail
+
+# https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/31641#note_2720303
+dEQP-VK.image.format_reinterpret.2d_array.r10x6g10x6b10x6a10x6_unorm_4pack16_r16g16b16a16_sfloat,Fail
+dEQP-VK.image.format_reinterpret.cube.r10x6g10x6b10x6a10x6_unorm_4pack16_r16g16b16a16_sfloat,Fail
+dEQP-VK.image.format_reinterpret.2d.r10x6g10x6b10x6a10x6_unorm_4pack16_r32g32_sint,Fail
+dEQP-VK.image.format_reinterpret.3d.r10x6g10x6b10x6a10x6_unorm_4pack16_r32g32_sint,Fail
