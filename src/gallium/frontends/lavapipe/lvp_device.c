@@ -1003,7 +1003,7 @@ lvp_get_properties(const struct lvp_physical_device *device, struct vk_propertie
 
       /* Vulkan 1.3 */
       .minSubgroupSize = lp_native_vector_width / 32,
-      .maxSubgroupSize = lp_native_vector_width / 32,
+      .maxSubgroupSize = MAX2(32, lp_native_vector_width / 32),
       .maxComputeWorkgroupSubgroups = 32,
       .requiredSubgroupSizeStages = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT,
       .maxInlineUniformTotalSize = MAX_DESCRIPTOR_UNIFORM_BLOCK_SIZE * MAX_PER_STAGE_DESCRIPTOR_UNIFORM_BLOCKS * MAX_SETS,
