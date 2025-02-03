@@ -7,18 +7,6 @@
 #include "compiler/libcl/libcl.h"
 #include "query.h"
 
-static inline void
-write_query_result(uintptr_t dst_addr, int32_t idx, bool is_64, uint64_t result)
-{
-   if (is_64) {
-      global uint64_t *out = (global uint64_t *)dst_addr;
-      out[idx] = result;
-   } else {
-      global uint32_t *out = (global uint32_t *)dst_addr;
-      out[idx] = result;
-   }
-}
-
 KERNEL(32)
 libagx_copy_query(global uint32_t *availability, global uint64_t *results,
                   global uint16_t *oq_index, uint64_t dst_addr,
@@ -29,6 +17,7 @@ libagx_copy_query(global uint32_t *availability, global uint64_t *results,
    uint i = cl_global_id.x;
    uint64_t dst = dst_addr + (((uint64_t)i) * dst_stride);
    uint32_t query = first_query + i;
+   VkQueryResultFlagBits flags = _64 ? VK_QUERY_RESULT_64_BIT : 0;
 
    bool available;
    if (availability)
@@ -44,12 +33,12 @@ libagx_copy_query(global uint32_t *availability, global uint64_t *results,
       uint idx = result_index * reports_per_query;
 
       for (unsigned i = 0; i < reports_per_query; ++i) {
-         write_query_result(dst, i, _64, results[idx + i]);
+         vk_write_query(dst, i, flags, results[idx + i]);
       }
    }
 
    if (with_availability) {
-      write_query_result(dst, reports_per_query, _64, available);
+      vk_write_query(dst, reports_per_query, flags, available);
    }
 }
 
