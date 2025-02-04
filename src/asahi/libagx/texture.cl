@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 #include "compiler/libcl/libcl.h"
+#include "compiler/libcl/libcl_swar.h"
 #include "libagx_intrinsics.h"
 #include <agx_pack.h>
 
@@ -125,18 +126,16 @@ libagx_lower_txf_robustness(constant struct agx_texture_packed *ptr,
 }
 
 static uint32_t
-calculate_twiddled_coordinates(ushort2 coord, uint16_t tile_w_px,
-                               uint16_t tile_h_px, uint32_t aligned_width_px)
+calculate_twiddled_coordinates(ushort2 coord, ushort2 tile_dim_px,
+                               uint32_t aligned_width_px)
 {
    /* Modulo by the tile width/height to get the offsets within the tile */
-   ushort2 tile_mask_vec = (ushort2)(tile_w_px - 1, tile_h_px - 1);
-   uint32_t tile_mask = upsample(tile_mask_vec.y, tile_mask_vec.x);
-   uint32_t coord_xy = upsample(coord.y, coord.x);
-   ushort2 offs_px = as_ushort2(coord_xy & tile_mask);
+   ushort2 tile_mask = swar_sub(tile_dim_px, 1);
+   ushort2 offs_px = swar_and(coord, tile_mask);
    uint32_t offset_within_tile_px = nir_interleave_agx(offs_px.x, offs_px.y);
 
    /* Get the coordinates of the corner of the tile */
-   ushort2 tile_px = as_ushort2(coord_xy & ~tile_mask);
+   ushort2 tile_px = swar_and(coord, swar_not(tile_mask));
 
    /* tile row start (px) =
     *   (y // tile height) * (# of tiles/row) * (# of pix/tile) =
@@ -151,7 +150,7 @@ calculate_twiddled_coordinates(ushort2 coord, uint16_t tile_w_px,
     *   align_down(x, tile width) / tile width * tile width * tile height =
     *   align_down(x, tile width) * tile height
     */
-   uint32_t tile_col_start_px = tile_px.x * tile_h_px;
+   uint32_t tile_col_start_px = tile_px.x * tile_dim_px.y;
 
    /* Get the total offset */
    return tile_row_start_px + tile_col_start_px + offset_within_tile_px;
@@ -184,8 +183,8 @@ libagx_image_texel_address(constant const struct agx_pbe_packed *ptr,
       }
 
       total_px = calculate_twiddled_coordinates(
-         convert_ushort2(coord.xy), d.tile_width_sw, d.tile_height_sw,
-         aligned_width_px);
+         convert_ushort2(coord.xy),
+         (ushort2)(d.tile_width_sw, d.tile_height_sw), aligned_width_px);
    }
 
    uint samples_log2 = is_msaa ? d.sample_count_log2_sw : 0;
