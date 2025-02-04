@@ -550,7 +550,7 @@ jm_emit_tiler_draw(struct mali_draw_packed *out, struct panfrost_batch *batch,
          (rast->multisample &&
           ((ctx->min_samples > 1) || ctx->valhall_has_blend_shader));
 
-      cfg.single_sampled_lines = !rast->multisample;
+      cfg.aligned_line_ends = !rast->multisample;
 
       cfg.vertex_array.packet = true;
 
@@ -561,7 +561,7 @@ jm_emit_tiler_draw(struct mali_draw_packed *out, struct panfrost_batch *batch,
 
       if (prim == MESA_PRIM_LINES && rast->line_smooth) {
          cfg.multisample_enable = true;
-         cfg.single_sampled_lines = false;
+         cfg.aligned_line_ends = false;
       }
 
       if (fs_required) {
