@@ -1,4 +1,7 @@
 #!/bin/sh
+# When changing this file, you need to bump the following
+# .gitlab-ci/image-tags.yml tags:
+# DEBIAN_BUILD_TAG
 
 if test -x /usr/bin/ccache; then
     if test -f /etc/debian_version; then
@@ -42,3 +45,22 @@ echo -e "retry_connrefused = on\n" \
 	"retry_on_host_error = on\n" \
 	"retry_on_http_error = 429,500,502,503,504\n" \
         "wait_retry = 32" >> /etc/wgetrc
+
+ci_tag_early_checks() {
+    # Runs the first part of the build script to perform the tag check only
+    uncollapsed_section_switch "ci_tag_early_checks" "Running Structured Tagging early checks"
+    echo "[Structured Tagging] Checking components: ${CI_BUILD_COMPONENTS}"
+    local bin_ci_dir
+    bin_ci_dir="$(git rev-parse --show-toplevel)"/bin/ci
+    # shellcheck disable=SC2086
+    "${bin_ci_dir}"/update_tag.sh --check ${CI_BUILD_COMPONENTS} || exit 1
+    echo "[Structured Tagging] Components check done"
+    section_end "ci_tag_early_checks"
+}
+
+# Check if each declared tag component is up to date before building
+if [ -n "${CI_BUILD_COMPONENTS:-}" ]; then
+    # Remove leading ${CI_BUILD_COMPONENTS%...} from the prefix
+    CI_BUILD_COMPONENTS="${CI_BUILD_COMPONENTS//\$\{CI_BUILD_COMPONENTS%*\} /}"
+    ci_tag_early_checks
+fi
