@@ -480,9 +480,27 @@ bi_emit_load_attr(bi_builder *b, nir_intrinsic_instr *instr)
     * s32) source, so use .auto32 to disregard.
     */
    nir_alu_type T = nir_intrinsic_dest_type(instr);
-   assert(T == nir_type_uint32 || T == nir_type_int32 || T == nir_type_float32);
-   enum bi_register_format regfmt =
-      T == nir_type_float32 ? BI_REGISTER_FORMAT_F32 : BI_REGISTER_FORMAT_AUTO;
+   enum bi_register_format regfmt = BI_REGISTER_FORMAT_AUTO;
+   switch (T) {
+      case nir_type_uint32:
+      case nir_type_int32:
+         regfmt = BI_REGISTER_FORMAT_AUTO;
+         break;
+      case nir_type_float32:
+         regfmt = BI_REGISTER_FORMAT_F32;
+         break;
+      case nir_type_uint16:
+         regfmt = BI_REGISTER_FORMAT_U16;
+         break;
+      case nir_type_int16:
+         regfmt = BI_REGISTER_FORMAT_S16;
+         break;
+      case nir_type_float16:
+         regfmt = BI_REGISTER_FORMAT_F16;
+         break;
+      default:
+         assert("unsupported attribute type" && false);
+   }
 
    nir_src *offset = nir_get_io_offset_src(instr);
    unsigned component = nir_intrinsic_component(instr);
@@ -556,6 +574,7 @@ bi_emit_load_vary(bi_builder *b, nir_intrinsic_instr *instr)
    enum bi_sample sample = BI_SAMPLE_CENTER;
    enum bi_update update = BI_UPDATE_STORE;
    enum bi_register_format regfmt = BI_REGISTER_FORMAT_AUTO;
+   enum bi_source_format source_format;
    bool smooth = instr->intrinsic == nir_intrinsic_load_interpolated_input;
    bi_index src0 = bi_null();
 
@@ -564,7 +583,13 @@ bi_emit_load_vary(bi_builder *b, nir_intrinsic_instr *instr)
    bi_index dest =
       (component == 0) ? bi_def_index(&instr->def) : bi_temp(b->shader);
 
+   nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
+
    unsigned sz = instr->def.bit_size;
+   assert(sz == 16 || sz == 32);
+   /* mediump varyings are always written as 32-bits in the VS, but may be read
+    * to 16 in the FS. */
+   unsigned src_sz = sem.medium_precision ? 32 : sz;
 
    if (smooth) {
       nir_intrinsic_instr *parent = nir_src_as_intrinsic(instr->src[0]);
@@ -573,11 +598,17 @@ bi_emit_load_vary(bi_builder *b, nir_intrinsic_instr *instr)
       sample = bi_interp_for_intrinsic(parent->intrinsic);
       src0 = bi_varying_src0_for_barycentric(b, parent);
 
-      assert(sz == 16 || sz == 32);
       regfmt = (sz == 16) ? BI_REGISTER_FORMAT_F16 : BI_REGISTER_FORMAT_F32;
+      source_format =
+         (src_sz == 16) ? BI_SOURCE_FORMAT_F16 : BI_SOURCE_FORMAT_F32;
    } else {
-      assert(sz == 32);
-      regfmt = BI_REGISTER_FORMAT_U32;
+      /* u16 regfmt is not supported by LD_VAR_BUF, but using f16 for integers
+       * is okay because we use a f16 attribute descriptor for all 16-bit
+       * varyings regardless of whether they are floats or ints. The
+       * conversion is a no-op. */
+      regfmt = (sz == 16) ? BI_REGISTER_FORMAT_F16 : BI_REGISTER_FORMAT_AUTO;
+      source_format = (src_sz == 16) ?
+         BI_SOURCE_FORMAT_FLAT16 : BI_SOURCE_FORMAT_FLAT32;
 
       /* Valhall can't have bi_null() here, although the source is
        * logically unused for flat varyings
@@ -601,9 +632,6 @@ bi_emit_load_vary(bi_builder *b, nir_intrinsic_instr *instr)
       b->shader->malloc_idvs && b->shader->inputs->valhall.use_ld_var_buf;
 
    if (use_ld_var_buf) {
-      enum bi_source_format source_format =
-         smooth ? BI_SOURCE_FORMAT_F32 : BI_SOURCE_FORMAT_FLAT32;
-
       if (immediate) {
          /* Immediate index given in bytes. */
          bi_ld_var_buf_imm_to(b, sz, dest, src0, regfmt, sample, source_format,
@@ -1080,14 +1108,19 @@ static void
 bi_emit_store_vary(bi_builder *b, nir_intrinsic_instr *instr)
 {
    /* In principle we can do better for 16-bit. At the moment we require
-    * 32-bit to permit the use of .auto, in order to force .u32 for flat
-    * varyings, to handle internal TGSI shaders that set flat in the VS
-    * but smooth in the FS */
+    * mediump varyings to be 32-bit to permit the use of .auto, in order to
+    * force .u32 for flat varyings, to handle internal TGSI shaders that set
+    * flat in the VS but smooth in the FS.
+    *
+    * Explicit 16-bit types are unaffected, and written as 16-bit. */
 
    ASSERTED nir_alu_type T = nir_intrinsic_src_type(instr);
    ASSERTED unsigned T_size = nir_alu_type_get_type_size(T);
-   assert(T_size == 32 || (b->shader->arch >= 9 && T_size == 16));
-   enum bi_register_format regfmt = BI_REGISTER_FORMAT_AUTO;
+   assert(T_size == 32 || T_size == 16);
+   /* 16-bit varyings are always written and loaded as F16, regardless of
+    * whether they are float or int */
+   enum bi_register_format regfmt =
+      T_size == 16 ? BI_REGISTER_FORMAT_F16 : BI_REGISTER_FORMAT_AUTO;
 
    unsigned imm_index = 0;
    bool immediate = bi_is_intr_immediate(instr, &imm_index, 16);
@@ -1110,15 +1143,16 @@ bi_emit_store_vary(bi_builder *b, nir_intrinsic_instr *instr)
     * introduce a TRIM.i32 pseudoinstruction?
     */
    if (nr < nir_intrinsic_src_components(instr, 0)) {
-      assert(T_size == 32 && "todo: 16-bit trim");
-
       bi_index chans[4] = {bi_null(), bi_null(), bi_null(), bi_null()};
-      unsigned src_comps = nir_intrinsic_src_components(instr, 0);
+      unsigned comps_per_reg = instr->def.bit_size == 16 ? 2 : 1;
+      unsigned src_comps =
+         DIV_ROUND_UP(nir_intrinsic_src_components(instr, 0), comps_per_reg);
+      unsigned dst_comps = DIV_ROUND_UP(nr, comps_per_reg);
 
       bi_emit_split_i32(b, chans, data, src_comps);
 
       bi_index tmp = bi_temp(b->shader);
-      bi_instr *collect = bi_collect_i32_to(b, tmp, nr);
+      bi_instr *collect = bi_collect_i32_to(b, tmp, dst_comps);
 
       bi_foreach_src(collect, w)
          collect->src[w] = chans[w];
@@ -5856,7 +5890,7 @@ bifrost_compile_shader_nir(nir_shader *nir,
    info->tls_size = nir->scratch_size;
    info->vs.idvs = bi_should_idvs(nir, inputs);
 
-   pan_nir_collect_varyings(nir, info);
+   pan_nir_collect_varyings(nir, info, PAN_MEDIUMP_VARY_32BIT);
 
    if (info->vs.idvs) {
       bi_compile_variant(nir, inputs, binary, info, BI_IDVS_POSITION);
