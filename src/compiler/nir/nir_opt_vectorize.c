@@ -615,3 +615,56 @@ nir_opt_vectorize(nir_shader *shader, nir_vectorize_cb filter,
 
    return progress;
 }
+
+uint8_t
+nir_swar_vectorize_cb(const nir_instr *instr, const void *data)
+{
+   if (instr->type != nir_instr_type_alu)
+      return 0;
+
+   nir_alu_instr *alu = nir_instr_as_alu(instr);
+   if (alu->def.bit_size != 16)
+      return 1;
+
+   switch (alu->op) {
+   case nir_op_iand:
+   case nir_op_ior:
+   case nir_op_ixor:
+   case nir_op_inot:
+      return 2;
+   default:
+      return 1;
+   }
+}
+
+static bool
+lower_swar(nir_builder *b, nir_instr *instr, void *data)
+{
+   /* We need to lower any instruction that we vectorize. */
+   if (nir_swar_vectorize_cb(instr, data) != 2)
+      return false;
+
+   /* The lowering is simple: turn the 2x16-bit operation into a 32-bit
+    * operation, packing the sources and unpacking the result. After this pass
+    * runs, the usual pack lowering, copy prop, and dead elimination will
+    * eliminate the vectors.
+    */
+   b->cursor = nir_before_instr(instr);
+   nir_alu_instr *alu = nir_instr_as_alu(instr);
+   nir_def *srcs[NIR_ALU_MAX_INPUTS] = { NULL };
+
+   for (unsigned i = 0; i < nir_op_infos[alu->op].num_inputs; ++i) {
+      srcs[i] = nir_pack_32_2x16(b, nir_ssa_for_alu_src(b, alu, i));
+   }
+
+   nir_def *res = nir_build_alu_src_arr(b, alu->op, srcs);
+   nir_def_replace(&alu->def, nir_unpack_32_2x16(b, res));
+   return true;
+}
+
+bool
+nir_lower_swar(nir_shader *nir)
+{
+   return nir_shader_instructions_pass(nir, lower_swar,
+                                       nir_metadata_control_flow, NULL);
+}

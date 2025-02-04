@@ -7031,6 +7031,9 @@ bool nir_opt_vectorize(nir_shader *shader, nir_vectorize_cb filter,
                        void *data);
 bool nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes);
 
+uint8_t nir_swar_vectorize_cb(const nir_instr *instr, const void *data);
+bool nir_lower_swar(nir_shader *nir);
+
 bool nir_opt_conditional_discard(nir_shader *shader);
 bool nir_opt_move_discards_to_top(nir_shader *shader);
 
