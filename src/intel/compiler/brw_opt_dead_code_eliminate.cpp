@@ -22,7 +22,7 @@
  */
 
 #include "brw_fs.h"
-#include "brw_fs_live_variables.h"
+#include "brw_analysis.h"
 #include "brw_cfg.h"
 
 /** @file
@@ -103,7 +103,7 @@ brw_opt_dead_code_eliminate(fs_visitor &s)
 
    bool progress = false;
 
-   const fs_live_variables &live_vars = s.live_analysis.require();
+   const brw_live_variables &live_vars = s.live_analysis.require();
    int num_vars = live_vars.num_vars;
    BITSET_WORD *live = rzalloc_array(NULL, BITSET_WORD, BITSET_WORDS(num_vars));
    BITSET_WORD *flag_live = rzalloc_array(NULL, BITSET_WORD, 1);
@@ -177,7 +177,7 @@ brw_opt_dead_code_eliminate(fs_visitor &s)
    ralloc_free(flag_live);
 
    if (progress)
-      s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
+      s.invalidate_analysis(BRW_DEPENDENCY_INSTRUCTIONS);
 
    return progress;
 }

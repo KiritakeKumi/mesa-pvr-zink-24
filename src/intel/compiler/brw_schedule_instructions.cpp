@@ -27,7 +27,7 @@
 
 #include "brw_eu.h"
 #include "brw_fs.h"
-#include "brw_fs_live_variables.h"
+#include "brw_analysis.h"
 #include "brw_cfg.h"
 #include <new>
 
@@ -822,7 +822,7 @@ brw_instruction_scheduler::count_reads_remaining(const brw_inst *inst)
 void
 brw_instruction_scheduler::setup_liveness(cfg_t *cfg)
 {
-   const fs_live_variables &live = s->live_analysis.require();
+   const brw_live_variables &live = s->live_analysis.require();
 
    /* First, compute liveness on a per-GRF level using the in/out sets from
     * liveness calculation.
@@ -1839,7 +1839,7 @@ brw_schedule_instructions_pre_ra(fs_visitor &s, brw_instruction_scheduler *sched
 
    sched->run(mode);
 
-   s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
+   s.invalidate_analysis(BRW_DEPENDENCY_INSTRUCTIONS);
 }
 
 void
@@ -1856,5 +1856,5 @@ brw_schedule_instructions_post_ra(fs_visitor &s)
 
    ralloc_free(mem_ctx);
 
-   s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
+   s.invalidate_analysis(BRW_DEPENDENCY_INSTRUCTIONS);
 }

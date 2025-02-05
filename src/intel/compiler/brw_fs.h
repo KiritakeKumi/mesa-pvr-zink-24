@@ -27,102 +27,15 @@
 
 #pragma once
 
+#include "brw_analysis.h"
 #include "brw_cfg.h"
 #include "brw_compiler.h"
 #include "brw_inst.h"
 #include "brw_ir_allocator.h"
-#include "brw_fs_live_variables.h"
-#include "brw_ir_performance.h"
 #include "compiler/nir/nir.h"
-
-struct bblock_t;
-namespace {
-   struct acp_entry;
-}
+#include "brw_analysis.h"
 
 struct fs_visitor;
-
-namespace brw {
-   /**
-    * Register pressure analysis of a shader.  Estimates how many registers
-    * are live at any point of the program in GRF units.
-    */
-   struct register_pressure {
-      register_pressure(const fs_visitor *v);
-      ~register_pressure();
-
-      analysis_dependency_class
-      dependency_class() const
-      {
-         return (DEPENDENCY_INSTRUCTION_IDENTITY |
-                 DEPENDENCY_INSTRUCTION_DATA_FLOW |
-                 DEPENDENCY_VARIABLES);
-      }
-
-      bool
-      validate(const fs_visitor *) const
-      {
-         /* FINISHME */
-         return true;
-      }
-
-      unsigned *regs_live_at_ip;
-   };
-
-   class def_analysis {
-   public:
-      def_analysis(const fs_visitor *v);
-      ~def_analysis();
-
-      brw_inst *
-      get(const brw_reg &reg) const
-      {
-         return reg.file == VGRF && reg.nr < def_count ?
-                def_insts[reg.nr] : NULL;
-      }
-
-      bblock_t *
-      get_block(const brw_reg &reg) const
-      {
-         return reg.file == VGRF && reg.nr < def_count ?
-                def_blocks[reg.nr] : NULL;
-      }
-
-      uint32_t
-      get_use_count(const brw_reg &reg) const
-      {
-         return reg.file == VGRF && reg.nr < def_count ?
-                def_use_counts[reg.nr] : 0;
-      }
-
-      unsigned count() const { return def_count; }
-      unsigned ssa_count() const;
-
-      void print_stats(const fs_visitor *) const;
-
-      analysis_dependency_class
-      dependency_class() const
-      {
-         return DEPENDENCY_INSTRUCTION_IDENTITY |
-                DEPENDENCY_INSTRUCTION_DATA_FLOW |
-                DEPENDENCY_VARIABLES |
-                DEPENDENCY_BLOCKS;
-      }
-
-      bool validate(const fs_visitor *) const;
-
-   private:
-      void mark_invalid(int);
-      bool fully_defines(const fs_visitor *v, brw_inst *);
-      void update_for_reads(const idom_tree &idom, bblock_t *block, brw_inst *);
-      void update_for_write(const fs_visitor *v, bblock_t *block, brw_inst *);
-
-      brw_inst **def_insts;
-      bblock_t **def_blocks;
-      uint32_t *def_use_counts;
-      unsigned def_count;
-   };
-}
 
 #define UBO_START ((1 << 16) - 4)
 
@@ -283,7 +196,7 @@ public:
    void calculate_payload_ranges(bool allow_spilling,
                                  unsigned payload_node_count,
                                  int *payload_last_use_ip) const;
-   void invalidate_analysis(brw::analysis_dependency_class c);
+   void invalidate_analysis(brw_analysis_dependency_class c);
 
    void vfail(const char *msg, va_list args);
    void fail(const char *msg, ...);
@@ -319,11 +232,11 @@ public:
 
    struct brw_stage_prog_data *prog_data;
 
-   brw_analysis<brw::fs_live_variables, fs_visitor> live_analysis;
-   brw_analysis<brw::register_pressure, fs_visitor> regpressure_analysis;
-   brw_analysis<brw::performance, fs_visitor> performance_analysis;
-   brw_analysis<brw::idom_tree, fs_visitor> idom_analysis;
-   brw_analysis<brw::def_analysis, fs_visitor> def_analysis;
+   brw_analysis<brw_live_variables, fs_visitor> live_analysis;
+   brw_analysis<brw_register_pressure, fs_visitor> regpressure_analysis;
+   brw_analysis<brw_performance, fs_visitor> performance_analysis;
+   brw_analysis<brw_idom_tree, fs_visitor> idom_analysis;
+   brw_analysis<brw_def_analysis, fs_visitor> def_analysis;
 
    /** Number of uniform variable components visited. */
    unsigned uniforms;
@@ -435,7 +348,7 @@ void brw_print_instructions(const fs_visitor &s, FILE *file = stderr);
 
 void brw_print_instruction(const fs_visitor &s, const brw_inst *inst,
                            FILE *file = stderr,
-                           const brw::def_analysis *defs = nullptr);
+                           const brw_def_analysis *defs = nullptr);
 
 void brw_print_swsb(FILE *f, const struct intel_device_info *devinfo, const tgl_swsb swsb);
 

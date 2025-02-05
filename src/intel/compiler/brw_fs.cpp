@@ -28,10 +28,10 @@
  * from the LIR.
  */
 
+#include "brw_analysis.h"
 #include "brw_eu.h"
 #include "brw_fs.h"
 #include "brw_builder.h"
-#include "brw_fs_live_variables.h"
 #include "brw_nir.h"
 #include "brw_cfg.h"
 #include "brw_rt.h"
@@ -314,7 +314,7 @@ fs_visitor::assign_curb_setup()
          i += num_regs;
       }
 
-      invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
+      invalidate_analysis(BRW_DEPENDENCY_INSTRUCTIONS);
    }
 
    /* Map the offsets in the UNIFORM file to fixed HW regs. */
@@ -392,7 +392,7 @@ fs_visitor::assign_curb_setup()
          }
       }
 
-      invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
+      invalidate_analysis(BRW_DEPENDENCY_INSTRUCTIONS);
    }
 
    /* This may be updated in assign_urb_setup or assign_vs_urb_setup. */
@@ -513,39 +513,8 @@ brw_fb_write_msg_control(const brw_inst *inst,
    return mctl;
 }
 
-brw::register_pressure::register_pressure(const fs_visitor *v)
-{
-   const fs_live_variables &live = v->live_analysis.require();
-   const unsigned num_instructions = v->cfg->num_blocks ?
-      v->cfg->blocks[v->cfg->num_blocks - 1]->end_ip + 1 : 0;
-
-   regs_live_at_ip = new unsigned[num_instructions]();
-
-   for (unsigned reg = 0; reg < v->alloc.count; reg++) {
-      for (int ip = live.vgrf_start[reg]; ip <= live.vgrf_end[reg]; ip++)
-         regs_live_at_ip[ip] += v->alloc.sizes[reg];
-   }
-
-   const unsigned payload_count = v->first_non_payload_grf;
-
-   int *payload_last_use_ip = new int[payload_count];
-   v->calculate_payload_ranges(true, payload_count, payload_last_use_ip);
-
-   for (unsigned reg = 0; reg < payload_count; reg++) {
-      for (int ip = 0; ip < payload_last_use_ip[reg]; ip++)
-         ++regs_live_at_ip[ip];
-   }
-
-   delete[] payload_last_use_ip;
-}
-
-brw::register_pressure::~register_pressure()
-{
-   delete[] regs_live_at_ip;
-}
-
 void
-fs_visitor::invalidate_analysis(brw::analysis_dependency_class c)
+fs_visitor::invalidate_analysis(brw_analysis_dependency_class c)
 {
    live_analysis.invalidate(c);
    regpressure_analysis.invalidate(c);
@@ -588,7 +557,7 @@ fs_visitor::debug_optimizer(const nir_shader *nir,
 static uint32_t
 brw_compute_max_register_pressure(fs_visitor &s)
 {
-   const register_pressure &rp = s.regpressure_analysis.require();
+   const brw_register_pressure &rp = s.regpressure_analysis.require();
    uint32_t ip = 0, max_pressure = 0;
    foreach_block_and_inst(block, brw_inst, inst, s.cfg) {
       max_pressure = MAX2(max_pressure, rp.regs_live_at_ip[ip]);
@@ -726,7 +695,7 @@ brw_allocate_registers(fs_visitor &s, bool allow_spilling)
 
       /* Reset back to the original order before trying the next mode */
       restore_instruction_order(s.cfg, orig_order);
-      s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
+      s.invalidate_analysis(BRW_DEPENDENCY_INSTRUCTIONS);
    }
 
    ralloc_free(scheduler_ctx);

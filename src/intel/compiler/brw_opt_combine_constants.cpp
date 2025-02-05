@@ -1310,7 +1310,7 @@ brw_opt_combine_constants(fs_visitor &s)
    table.num_boxes = 0;
    table.boxes = ralloc_array(const_ctx, brw_inst_box, table.size_boxes);
 
-   const brw::idom_tree &idom = s.idom_analysis.require();
+   const brw_idom_tree &idom = s.idom_analysis.require();
    unsigned ip = -1;
 
    /* Make a pass through all instructions and mark each constant is used in
@@ -1794,8 +1794,8 @@ brw_opt_combine_constants(fs_visitor &s)
 
    ralloc_free(const_ctx);
 
-   s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES |
-                         (rebuild_cfg ? DEPENDENCY_BLOCKS : DEPENDENCY_NOTHING));
+   s.invalidate_analysis(BRW_DEPENDENCY_INSTRUCTIONS | BRW_DEPENDENCY_VARIABLES |
+                         (rebuild_cfg ? BRW_DEPENDENCY_BLOCKS : BRW_DEPENDENCY_NOTHING));
 
    return true;
 }

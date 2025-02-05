@@ -21,6 +21,11 @@ intel_nir_files = files(
 )
 
 libintel_compiler_brw_files = files(
+  'brw_analysis.h',
+  'brw_analysis.cpp',
+  'brw_analysis_def.cpp',
+  'brw_analysis_liveness.cpp',
+  'brw_analysis_performance.cpp',
   'brw_builder.cpp',
   'brw_builder.h',
   'brw_cfg.cpp',
@@ -36,7 +41,6 @@ libintel_compiler_brw_files = files(
   'brw_compiler.c',
   'brw_compiler.h',
   'brw_debug_recompile.c',
-  'brw_def_analysis.cpp',
   'brw_disasm.c',
   'brw_disasm_info.cpp',
   'brw_disasm_info.h',
@@ -50,8 +54,6 @@ libintel_compiler_brw_files = files(
   'brw_from_nir.cpp',
   'brw_fs.cpp',
   'brw_fs.h',
-  'brw_fs_live_variables.cpp',
-  'brw_fs_live_variables.h',
   'brw_fs_thread_payload.cpp',
   'brw_fs_visitor.cpp',
   'brw_generator.cpp',
@@ -59,9 +61,6 @@ libintel_compiler_brw_files = files(
   'brw_inst.cpp',
   'brw_inst.h',
   'brw_ir_allocator.h',
-  'brw_ir_analysis.h',
-  'brw_ir_performance.h',
-  'brw_ir_performance.cpp',
   'brw_isa_info.h',
   'brw_lower.cpp',
   'brw_lower_dpas.cpp',

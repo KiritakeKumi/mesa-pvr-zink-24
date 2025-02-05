@@ -40,9 +40,9 @@
  * mul vgrf5:F, vgrf5:F, vgrf4:F
  */
 
+#include "brw_analysis.h"
 #include "brw_fs.h"
 #include "brw_cfg.h"
-#include "brw_fs_live_variables.h"
 
 using namespace brw;
 
@@ -98,7 +98,7 @@ is_coalesce_candidate(const fs_visitor *v, const brw_inst *inst)
 
 static bool
 can_coalesce_vars(const intel_device_info *devinfo,
-                  const fs_live_variables &live, const cfg_t *cfg,
+                  const brw_live_variables &live, const cfg_t *cfg,
                   const bblock_t *block, const brw_inst *inst,
                   int dst_var, int src_var)
 {
@@ -231,7 +231,7 @@ brw_opt_register_coalesce(fs_visitor &s)
    const intel_device_info *devinfo = s.devinfo;
 
    bool progress = false;
-   fs_live_variables &live = s.live_analysis.require();
+   brw_live_variables &live = s.live_analysis.require();
    int src_size = 0;
    int channels_remaining = 0;
    unsigned src_reg = ~0u, dst_reg = ~0u;
@@ -377,7 +377,7 @@ brw_opt_register_coalesce(fs_visitor &s)
 
       s.cfg->adjust_block_ips();
 
-      s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS);
+      s.invalidate_analysis(BRW_DEPENDENCY_INSTRUCTIONS);
    }
 
    delete[] src_var;

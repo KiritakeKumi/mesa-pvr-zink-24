@@ -363,7 +363,7 @@ cmp_func(const void *data1, const void *data2)
 }
 
 static bool
-remap_sources(fs_visitor &s, const brw::def_analysis &defs,
+remap_sources(fs_visitor &s, const brw_def_analysis &defs,
               brw_inst *inst, struct remap_entry *remap_table)
 {
    bool progress = false;
@@ -399,8 +399,8 @@ bool
 brw_opt_cse_defs(fs_visitor &s)
 {
    const intel_device_info *devinfo = s.devinfo;
-   const idom_tree &idom = s.idom_analysis.require();
-   const brw::def_analysis &defs = s.def_analysis.require();
+   const brw_idom_tree &idom = s.idom_analysis.require();
+   const brw_def_analysis &defs = s.def_analysis.require();
    bool progress = false;
    bool need_remaps = false;
 
@@ -514,8 +514,8 @@ out:
 
    if (progress) {
       s.cfg->adjust_block_ips();
-      s.invalidate_analysis(DEPENDENCY_INSTRUCTION_DATA_FLOW |
-                            DEPENDENCY_INSTRUCTION_DETAIL);
+      s.invalidate_analysis(BRW_DEPENDENCY_INSTRUCTION_DATA_FLOW |
+                            BRW_DEPENDENCY_INSTRUCTION_DETAIL);
    }
 
    return progress;
