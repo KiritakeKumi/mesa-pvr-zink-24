@@ -223,6 +223,9 @@ struct intel_perf_query_result;
 
 #define ANV_GRAPHICS_SHADER_STAGE_COUNT (MESA_SHADER_MESH + 1)
 
+/* Defines where various values are defined in the inline parameter register.
+ */
+#define ANV_INLINE_PARAM_PUSH_ADDRESS_OFFSET (0)
 #define ANV_INLINE_PARAM_NUM_WORKGROUPS_OFFSET (8)
 
 /* RENDER_SURFACE_STATE is a bit smaller (48b) but since it is aligned to 64
@@ -1145,6 +1148,10 @@ struct anv_physical_device {
     } memory;
 
     struct {
+       /**
+        * Unused
+        */
+       struct anv_va_range                      first_2mb;
        /**
         * General state pool
         */
@@ -4494,6 +4501,14 @@ anv_cmd_buffer_alloc_temporary_state(struct anv_cmd_buffer *cmd_buffer,
 static inline struct anv_address
 anv_cmd_buffer_temporary_state_address(struct anv_cmd_buffer *cmd_buffer,
                                        struct anv_state state)
+{
+   return anv_state_pool_state_address(
+      &cmd_buffer->device->dynamic_state_pool, state);
+}
+
+static inline struct anv_address
+anv_cmd_buffer_gfx_push_constants_state_address(struct anv_cmd_buffer *cmd_buffer,
+                                                struct anv_state state)
 {
    return anv_state_pool_state_address(
       &cmd_buffer->device->dynamic_state_pool, state);
