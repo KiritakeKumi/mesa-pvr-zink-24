@@ -29,14 +29,63 @@ radv_meta_build_resolve_srgb_conversion(nir_builder *b, nir_def *input)
    return nir_vec(b, comp, 4);
 }
 
-static nir_shader *
-build_resolve_compute_shader(struct radv_device *dev, bool is_integer, bool is_srgb, int samples)
+enum radv_resolve_compute_type {
+   RADV_RESOLVE_COMPUTE_NORM,
+   RADV_RESOLVE_COMPUTE_NORM_SRGB,
+   RADV_RESOLVE_COMPUTE_INTEGER,
+   RADV_RESOLVE_COMPUTE_FLOAT,
+   RADV_RESOLVE_COMPUTE_COUNT,
+};
+
+static const char *
+radv_resolve_compute_type_name(enum radv_resolve_compute_type type)
 {
-   enum glsl_base_type img_base_type = is_integer ? GLSL_TYPE_UINT : GLSL_TYPE_FLOAT;
+   switch (type) {
+   case RADV_RESOLVE_COMPUTE_NORM:
+      return "norm";
+   case RADV_RESOLVE_COMPUTE_NORM_SRGB:
+      return "srgb";
+   case RADV_RESOLVE_COMPUTE_INTEGER:
+      return "integer";
+   case RADV_RESOLVE_COMPUTE_FLOAT:
+      return "float";
+   default:
+      unreachable("invalid compute resolve type");
+   }
+}
+
+static enum radv_resolve_compute_type
+radv_get_resolve_compute_type(VkFormat format)
+{
+   if (vk_format_is_int(format))
+      return RADV_RESOLVE_COMPUTE_INTEGER;
+
+   if (vk_format_is_unorm(format) || vk_format_is_snorm(format)) {
+      uint32_t max_bit_size = 0;
+      for (uint32_t i = 0; i < vk_format_get_nr_components(format); i++)
+         max_bit_size = MAX2(max_bit_size, vk_format_get_component_bits(format, UTIL_FORMAT_COLORSPACE_RGB, i));
+
+      /* srgb formats are all 8-bit */
+      if (vk_format_is_srgb(format)) {
+         assert(max_bit_size == 8);
+         return RADV_RESOLVE_COMPUTE_NORM_SRGB;
+      }
+
+      if (max_bit_size <= 10)
+         return RADV_RESOLVE_COMPUTE_NORM;
+   }
+
+   return RADV_RESOLVE_COMPUTE_FLOAT;
+}
+
+static nir_shader *
+build_resolve_compute_shader(struct radv_device *dev, enum radv_resolve_compute_type type, int samples)
+{
+   enum glsl_base_type img_base_type = type == RADV_RESOLVE_COMPUTE_INTEGER ? GLSL_TYPE_UINT : GLSL_TYPE_FLOAT;
    const struct glsl_type *sampler_type = glsl_sampler_type(GLSL_SAMPLER_DIM_MS, false, false, img_base_type);
    const struct glsl_type *img_type = glsl_image_type(GLSL_SAMPLER_DIM_2D, false, img_base_type);
    nir_builder b = radv_meta_init_shader(dev, MESA_SHADER_COMPUTE, "meta_resolve_cs-%d-%s", samples,
-                                         is_integer ? "int" : (is_srgb ? "srgb" : "float"));
+                                         radv_resolve_compute_type_name(type));
    b.shader->info.workgroup_size[0] = 8;
    b.shader->info.workgroup_size[1] = 8;
 
@@ -58,11 +107,16 @@ build_resolve_compute_shader(struct radv_device *dev, bool is_integer, bool is_s
 
    nir_variable *color = nir_local_variable_create(b.impl, glsl_vec4_type(), "color");
 
-   radv_meta_build_resolve_shader_core(dev, &b, is_integer, samples, input_img, color, src_coord);
+   radv_meta_build_resolve_shader_core(dev, &b, type == RADV_RESOLVE_COMPUTE_INTEGER, samples, input_img, color,
+                                       src_coord);
 
    nir_def *outval = nir_load_var(&b, color);
-   if (is_srgb)
+
+   if (type == RADV_RESOLVE_COMPUTE_NORM_SRGB)
       outval = radv_meta_build_resolve_srgb_conversion(&b, outval);
+
+   if (type == RADV_RESOLVE_COMPUTE_NORM || type == RADV_RESOLVE_COMPUTE_NORM_SRGB)
+      outval = nir_f2f32(&b, nir_f2f16_rtz(&b, outval));
 
    nir_def *img_coord = nir_vec4(&b, nir_channel(&b, dst_coord, 0), nir_channel(&b, dst_coord, 1), nir_undef(&b, 1, 32),
                                  nir_undef(&b, 1, 32));
@@ -203,8 +257,7 @@ create_layout(struct radv_device *device, VkPipelineLayout *layout_out)
 
 struct radv_resolve_color_cs_key {
    enum radv_meta_object_key_type type;
-   bool is_integer;
-   bool is_srgb;
+   enum radv_resolve_compute_type resolve_type;
    uint8_t samples;
 };
 
@@ -212,8 +265,7 @@ static VkResult
 get_color_resolve_pipeline(struct radv_device *device, struct radv_image_view *src_iview, VkPipeline *pipeline_out,
                            VkPipelineLayout *layout_out)
 {
-   const bool is_integer = vk_format_is_int(src_iview->vk.format);
-   const bool is_srgb = vk_format_is_srgb(src_iview->vk.format);
+   const enum radv_resolve_compute_type type = radv_get_resolve_compute_type(src_iview->vk.format);
    uint32_t samples = src_iview->image->vk.samples;
    struct radv_resolve_color_cs_key key;
    VkResult result;
@@ -224,8 +276,7 @@ get_color_resolve_pipeline(struct radv_device *device, struct radv_image_view *s
 
    memset(&key, 0, sizeof(key));
    key.type = RADV_META_OBJECT_KEY_RESOLVE_COLOR_CS;
-   key.is_integer = is_integer;
-   key.is_srgb = is_srgb;
+   key.resolve_type = type;
    key.samples = samples;
 
    VkPipeline pipeline_from_cache = vk_meta_lookup_pipeline(&device->meta_state.device, &key, sizeof(key));
@@ -234,7 +285,7 @@ get_color_resolve_pipeline(struct radv_device *device, struct radv_image_view *s
       return VK_SUCCESS;
    }
 
-   nir_shader *cs = build_resolve_compute_shader(device, is_integer, is_srgb, samples);
+   nir_shader *cs = build_resolve_compute_shader(device, type, samples);
 
    const VkPipelineShaderStageCreateInfo stage_info = {
       .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,

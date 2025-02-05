@@ -1,3 +1,4 @@
 cl_khr_spirv_linkonce_odr in rusticl
 storagePushConstant16 on panvk
 storageInputOutput16 on panvk
+VK_EXT_sample_locations on RADV for GFX10+
