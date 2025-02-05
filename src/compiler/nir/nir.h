@@ -2233,6 +2233,14 @@ typedef enum nir_tex_src_type {
     */
    nir_tex_src_min_lod,
 
+   /** LOD bias + min LOD packed together into 32-bits. This is the common case
+    * for texturing on Honeykrisp with DX12, where both LOD bias and min LOD are
+    * emulated and passed in a single hardware source together. So it's
+    * important to optimize so e.g. nir_opt_preamble can make good decisions
+    * that avoid extra moves.
+    */
+   nir_tex_src_lod_bias_min_agx,
+
    /** MSAA sample index */
    nir_tex_src_ms_index,
 
@@ -2376,6 +2384,8 @@ typedef enum nir_texop {
    nir_texop_sampler_descriptor_amd,
    /** Returns the sampler's LOD bias */
    nir_texop_lod_bias_agx,
+   /** Returns the image view's min LOD */
+   nir_texop_image_min_lod_agx,
    /** Returns a bool indicating that the sampler uses a custom border colour */
    nir_texop_has_custom_border_color_agx,
    /** Returns the sampler's custom border colour (if has_custom_border_agx) */
