@@ -399,17 +399,13 @@ static inline nir_def *
 brw_nir_rt_unpack_leaf_ptr(nir_builder *b, nir_def *vec2,
                            const struct intel_device_info *devinfo)
 {
-   nir_def *ptr64 = nir_imul_imm(b, nir_pack_64_2x32(b, vec2), 64);
-   nir_def *ptr_lo = nir_unpack_64_2x32_split_x(b, ptr64);
-   nir_def *ptr_hi = nir_unpack_64_2x32_split_y(b, ptr64);
    nir_def *result;
    if (devinfo->ver >= 30) {
-      /* Hit record leaf pointers are 58-bit and assumed to be in 64B chunks.
-       *
-       * ptr_lo has lower 6 bits for hitGroupIndex2/3 and we need to extract
-       * top 26 bits from ptr_lo to make address.
+      /* Hit record leaf pointers are at the higher 58-bit.
+       * We get rid of the lower 6bit to make an address.
+       * The lower 6bit being zero indicates that this ptr is 64B aligned.
        */
-      result = nir_ishr_imm(b, nir_pack_64_2x32_split(b, ptr_lo, ptr_hi), 6);
+      result = nir_iand_imm(b, nir_pack_64_2x32(b, vec2), 0xFFFFFFFFFFFFFFC0);
    } else {
       /* Hit record leaf pointers are 42-bit and assumed to be in 64B chunks.
        * This leaves 22 bits at the top for other stuff.
@@ -417,6 +413,9 @@ brw_nir_rt_unpack_leaf_ptr(nir_builder *b, nir_def *vec2,
        * The top 16 bits (remember, we shifted by 6 already) contain garbage
        * that we need to get rid of.
        */
+      nir_def *ptr64 = nir_imul_imm(b, nir_pack_64_2x32(b, vec2), 64);
+      nir_def *ptr_lo = nir_unpack_64_2x32_split_x(b, ptr64);
+      nir_def *ptr_hi = nir_unpack_64_2x32_split_y(b, ptr64);
       ptr_hi = nir_extract_i16(b, ptr_hi, nir_imm_int(b, 0));
       result = nir_pack_64_2x32_split(b, ptr_lo, ptr_hi);
    }
