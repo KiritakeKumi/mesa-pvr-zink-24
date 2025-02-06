@@ -2402,7 +2402,9 @@ pub enum MemEvictionPriority {
     First,
     Normal,
     Last,
+    LastUse,
     Unchanged,
+    NoAllocate,
 }
 
 impl fmt::Display for MemEvictionPriority {
@@ -2411,7 +2413,9 @@ impl fmt::Display for MemEvictionPriority {
             MemEvictionPriority::First => write!(f, ".ef"),
             MemEvictionPriority::Normal => Ok(()),
             MemEvictionPriority::Last => write!(f, ".el"),
-            MemEvictionPriority::Unchanged => write!(f, ".lu"),
+            MemEvictionPriority::LastUse => write!(f, ".lu"),
+            MemEvictionPriority::Unchanged => write!(f, ".eu"),
+            MemEvictionPriority::NoAllocate => write!(f, ".na"),
         }
     }
 }
@@ -4671,6 +4675,7 @@ pub struct OpTex {
     pub lod_mode: TexLodMode,
     pub z_cmpr: bool,
     pub offset: bool,
+    pub mem_eviction_priority: MemEvictionPriority,
     pub mask: u8,
 }
 
@@ -4686,6 +4691,7 @@ impl DisplayOp for OpTex {
         if self.z_cmpr {
             write!(f, ".dc")?;
         }
+        write!(f, "{}", self.mem_eviction_priority)?;
         write!(f, " {} {} {}", self.tex, self.srcs[0], self.srcs[1])
     }
 }
@@ -4706,6 +4712,7 @@ pub struct OpTld {
     pub is_ms: bool,
     pub lod_mode: TexLodMode,
     pub offset: bool,
+    pub mem_eviction_priority: MemEvictionPriority,
     pub mask: u8,
 }
 
@@ -4721,6 +4728,7 @@ impl DisplayOp for OpTld {
         if self.is_ms {
             write!(f, ".ms")?;
         }
+        write!(f, "{}", self.mem_eviction_priority)?;
         write!(f, " {} {} {}", self.tex, self.srcs[0], self.srcs[1])
     }
 }
@@ -4741,6 +4749,7 @@ pub struct OpTld4 {
     pub comp: u8,
     pub offset_mode: Tld4OffsetMode,
     pub z_cmpr: bool,
+    pub mem_eviction_priority: MemEvictionPriority,
     pub mask: u8,
 }
 
@@ -4750,6 +4759,10 @@ impl DisplayOp for OpTld4 {
         if self.offset_mode != Tld4OffsetMode::None {
             write!(f, ".{}", self.offset_mode)?;
         }
+        if self.z_cmpr {
+            write!(f, ".dc")?;
+        }
+        write!(f, "{}", self.mem_eviction_priority)?;
         write!(f, " {} {} {}", self.tex, self.srcs[0], self.srcs[1])
     }
 }
@@ -4793,6 +4806,7 @@ pub struct OpTxd {
 
     pub dim: TexDim,
     pub offset: bool,
+    pub mem_eviction_priority: MemEvictionPriority,
     pub mask: u8,
 }
 
@@ -4802,6 +4816,7 @@ impl DisplayOp for OpTxd {
         if self.offset {
             write!(f, ".aoffi")?;
         }
+        write!(f, "{}", self.mem_eviction_priority)?;
         write!(f, " {} {} {}", self.tex, self.srcs[0], self.srcs[1])
     }
 }

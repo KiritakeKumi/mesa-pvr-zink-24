@@ -2356,7 +2356,7 @@ impl SM70Op for OpTex {
         e.set_bit(76, self.offset);
         e.set_bit(77, false); // ToDo: NDV
         e.set_bit(78, self.z_cmpr);
-        e.set_field(84..87, 1);
+        e.set_eviction_priority(&self.mem_eviction_priority);
         e.set_tex_lod_mode(87..90, self.lod_mode);
         e.set_bit(90, false); // TODO: .NODEP
     }
@@ -2403,6 +2403,7 @@ impl SM70Op for OpTld {
             self.lod_mode == TexLodMode::Zero
                 || self.lod_mode == TexLodMode::Lod
         );
+        e.set_eviction_priority(&self.mem_eviction_priority);
         e.set_tex_lod_mode(87..90, self.lod_mode);
         e.set_bit(90, false); // TODO: .NODEP
     }
@@ -2451,7 +2452,7 @@ impl SM70Op for OpTld4 {
         );
         // bit 77: .CL
         e.set_bit(78, self.z_cmpr);
-        e.set_bit(84, true); // !.EF
+        e.set_eviction_priority(&self.mem_eviction_priority);
         e.set_field(87..89, self.comp);
         e.set_bit(90, false); // TODO: .NODEP
     }
@@ -2529,6 +2530,7 @@ impl SM70Op for OpTxd {
         e.set_field(72..76, self.mask);
         e.set_bit(76, self.offset);
         e.set_bit(77, false); // ToDo: NDV
+        e.set_eviction_priority(&self.mem_eviction_priority);
         e.set_bit(90, false); // TODO: .NODEP
     }
 }
@@ -2615,12 +2617,14 @@ impl SM70Encoder<'_> {
 
     fn set_eviction_priority(&mut self, pri: &MemEvictionPriority) {
         self.set_field(
-            84..86,
+            84..87,
             match pri {
                 MemEvictionPriority::First => 0_u8,
                 MemEvictionPriority::Normal => 1_u8,
                 MemEvictionPriority::Last => 2_u8,
-                MemEvictionPriority::Unchanged => 3_u8,
+                MemEvictionPriority::LastUse => 3_u8,
+                MemEvictionPriority::Unchanged => 4_u8,
+                MemEvictionPriority::NoAllocate => 5_u8,
             },
         );
     }
