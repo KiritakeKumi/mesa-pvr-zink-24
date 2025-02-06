@@ -837,3 +837,36 @@ bool brw_should_print_shader(const nir_shader *shader, uint64_t debug_flag)
 {
    return INTEL_DEBUG(debug_flag) && (!shader->info.internal || NIR_DEBUG(PRINT_INTERNAL));
 }
+
+static unsigned
+brw_allocate_vgrf_number(fs_visitor &s, unsigned size_in_REGSIZE_units)
+{
+   assert(size_in_REGSIZE_units > 0);
+
+   if (s.alloc.capacity <= s.alloc.count) {
+      unsigned new_cap = MAX2(16, s.alloc.capacity * 2);
+      s.alloc.sizes = rerzalloc(s.mem_ctx, s.alloc.sizes, unsigned,
+                                s.alloc.capacity, new_cap);
+      s.alloc.capacity = new_cap;
+   }
+
+   s.alloc.sizes[s.alloc.count] = size_in_REGSIZE_units;
+
+   return s.alloc.count++;
+}
+
+brw_reg
+brw_allocate_vgrf(fs_visitor &s, brw_reg_type type, unsigned count)
+{
+   const unsigned unit = reg_unit(s.devinfo);
+   const unsigned size = DIV_ROUND_UP(count * brw_type_size_bytes(type),
+                                      unit * REG_SIZE) * unit;
+   return retype(brw_allocate_vgrf_units(s, size), type);
+}
+
+brw_reg
+brw_allocate_vgrf_units(fs_visitor &s, unsigned units_of_REGSIZE)
+{
+   return brw_vgrf(brw_allocate_vgrf_number(s, units_of_REGSIZE), BRW_TYPE_UD);
+}
+
