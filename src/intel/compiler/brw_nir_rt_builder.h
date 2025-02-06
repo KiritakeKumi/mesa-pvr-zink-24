@@ -500,7 +500,11 @@ brw_nir_rt_load_mem_hit_from_addr(nir_builder *b,
                                          0xffffff);
       nir_def *u = nir_iand_imm(b, nir_channel(b, data, 1), 0xffffff);
       nir_def *v = nir_iand_imm(b, nir_channel(b, data, 2), 0xffffff);
-      defs->tri_bary = nir_vec2(b, u, v);
+      /* For Xe3+, barycentric coordinates are stored as 24 bit unorm */
+      nir_def *u_f = nir_fdiv(b, nir_u2f32(b, u), nir_imm_float(b, 0xffffff));
+      nir_def *v_f = nir_fdiv(b, nir_u2f32(b, v), nir_imm_float(b, 0xffffff));
+
+      defs->tri_bary = nir_vec2(b, u_f, v_f);
       defs->prim_index_delta = nir_ubitfield_extract(b, bitfield,
                                                      nir_imm_int(b, 0),
                                                      nir_imm_int(b, 5));
