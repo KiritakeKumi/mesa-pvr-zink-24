@@ -160,9 +160,9 @@ hwconfig_item_warning(const char *devinfo_name, uint32_t devinfo_val,
 {
 #ifndef NDEBUG
    if (devinfo_val != hwconfig_val) {
-      mesa_logw("%s (%u) != devinfo->%s (%u)",
-                key_to_name(hwconfig_key), hwconfig_val, devinfo_name,
-                devinfo_val);
+      mesa_logw_once("%s (%u) != devinfo->%s (%u)",
+                     key_to_name(hwconfig_key), hwconfig_val, devinfo_name,
+                     devinfo_val);
    }
 #endif
 }
