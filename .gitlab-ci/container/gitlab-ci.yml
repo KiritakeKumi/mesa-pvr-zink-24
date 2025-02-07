@@ -165,6 +165,7 @@ debian/s390x_build:
 # Android NDK cross-build image
 .android-variables:
   variables:
+    ANDROID_VERSION: 14
     ANDROID_NDK_VERSION: "r27c"
     ANDROID_SDK_VERSION: 34
     ANDROID_LLVM_VERSION: llvmorg-18.1.8

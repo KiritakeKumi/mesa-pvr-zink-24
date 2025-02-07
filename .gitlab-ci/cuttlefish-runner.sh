@@ -8,7 +8,8 @@ section_start cuttlefish_setup "cuttlefish: setup"
 set -xe
 
 export HOME=/cuttlefish
-export PATH=/cuttlefish/bin:$PATH
+export PATH=/cuttlefish/bin:/android-tools/android-cts/jdk/bin/:/android-tools/build-tools:/android-tools/platform-tools:$PATH
+export JAVA_HOME=/android-tools/android-cts/jdk
 export LD_LIBRARY_PATH=/cuttlefish/lib64:${CI_PROJECT_DIR}/install/lib:$LD_LIBRARY_PATH
 export EGL_PLATFORM=surfaceless
 
@@ -162,6 +163,32 @@ else
   fi
 fi
 
+if [ -n "$USE_ANDROID_CTS" ]; then
+
+# Wait for the appops service to show up
+while [ "$($ADB shell dumpsys appops)" = "" ] ; do sleep 1; done
+
+SKIP_FILE="$INSTALL/${GPU_VERSION}-android-cts-skips.txt"
+
+EXCLUDE_FILTERS=""
+if [ -e "$SKIP_FILE" ]; then
+  EXCLUDE_FILTERS+="$(sed -s 's/.*/--exclude-filter "\0" /g' < "$SKIP_FILE")"
+fi
+
+eval "/android-tools/android-cts/tools/cts-tradefed" run commandAndExit cts-dev \
+  $EXCLUDE_FILTERS \
+  --module CtsGraphicsTestCases
+
+EXIT_CODE=$?
+set -e
+section_switch cuttlefish_results "cuttlefish: gathering the results"
+
+cp -r "/android-tools/android-cts/results/latest"/* $RESULTS_DIR
+cp -r "/android-tools/android-cts/logs/latest"/* $RESULTS_DIR
+
+section_end cuttlefish_results
+
+else
 
 # deqp
 
@@ -253,4 +280,7 @@ $ADB shell "cd ${AOSP_RESULTS}/..; \
 $ADB pull "$AOSP_RESULTS/junit.xml" "$RESULTS_DIR"
 
 section_end cuttlefish_results
+
+fi
+
 exit $EXIT_CODE
