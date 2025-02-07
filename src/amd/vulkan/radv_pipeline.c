@@ -345,9 +345,6 @@ radv_postprocess_nir(struct radv_device *device, const struct radv_graphics_stat
          NIR_PASS(_, stage->nir, nir_opt_shrink_stores, !instance->drirc.disable_shrink_image_store);
 
          constant_fold_for_push_const = true;
-
-         /* Gather info again, to update whether 8/16-bit are used. */
-         nir_shader_gather_info(stage->nir, nir_shader_get_entrypoint(stage->nir));
       }
    }
 
@@ -408,10 +405,6 @@ radv_postprocess_nir(struct radv_device *device, const struct radv_graphics_stat
 
    /* TODO: vectorize loads after this to vectorize loading adjacent descriptors */
    NIR_PASS_V(stage->nir, radv_nir_apply_pipeline_layout, device, stage);
-
-   if (!stage->key.optimisations_disabled) {
-      NIR_PASS(_, stage->nir, nir_opt_shrink_vectors, true);
-   }
 
    NIR_PASS(_, stage->nir, nir_lower_alu_width, opt_vectorize_callback, device);
 
@@ -520,13 +513,40 @@ radv_postprocess_nir(struct radv_device *device, const struct radv_graphics_stat
               radv_select_hw_stage(&stage->info, gfx_level), stage->info.wave_size, stage->info.workgroup_size,
               &stage->args.ac);
    NIR_PASS_V(stage->nir, radv_nir_lower_abi, gfx_level, stage, gfx_state, pdev->info.address32_hi);
+
+   if (!stage->key.optimisations_disabled) {
+      NIR_PASS(_, stage->nir, nir_opt_dce);
+      NIR_PASS(_, stage->nir, nir_opt_shrink_vectors, true);
+
+      NIR_PASS(_, stage->nir, nir_copy_prop);
+      NIR_PASS(_, stage->nir, nir_opt_constant_folding);
+      NIR_PASS(_, stage->nir, nir_opt_cse);
+
+      nir_load_store_vectorize_options late_vectorize_opts = {
+         .modes =
+            nir_var_mem_global | nir_var_mem_shared | nir_var_shader_out | nir_var_mem_task_payload | nir_var_shader_in,
+         .callback = ac_nir_mem_vectorize_callback,
+         .cb_data = &(struct ac_nir_config){gfx_level, !use_llvm},
+         .robust_modes = 0,
+         /* On GFX6, read2/write2 is out-of-bounds if the offset register is negative, even if
+          * the final offset is not.
+          */
+         .has_shared2_amd = gfx_level >= GFX7,
+      };
+
+      progress = false;
+      NIR_PASS(progress, stage->nir, nir_opt_load_store_vectorize, &late_vectorize_opts);
+      if (progress)
+         NIR_PASS(_, stage->nir, ac_nir_lower_mem_access_bit_sizes, gfx_level, use_llvm);
+   }
+
    radv_optimize_nir_algebraic(
       stage->nir, io_to_mem || lowered_ngg || stage->stage == MESA_SHADER_COMPUTE || stage->stage == MESA_SHADER_TASK,
       gfx_level >= GFX8);
 
    NIR_PASS(_, stage->nir, nir_lower_fp16_casts, nir_lower_fp16_split_fp64);
 
-   if (stage->nir->info.bit_sizes_int & (8 | 16)) {
+   if (ac_nir_might_lower_bit_size(stage->nir)) {
       if (gfx_level >= GFX8)
          nir_divergence_analysis(stage->nir);
 
