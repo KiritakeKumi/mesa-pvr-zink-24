@@ -1,7 +1,4 @@
 #!/bin/sh
-# When changing this file, you need to bump the following
-# .gitlab-ci/image-tags.yml tags:
-# DEBIAN_BUILD_TAG
 
 if test -x /usr/bin/ccache; then
     if test -f /etc/debian_version; then
