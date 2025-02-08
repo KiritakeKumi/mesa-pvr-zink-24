@@ -368,6 +368,12 @@ st_prog_to_nir_postprocess(struct st_context *st, nir_shader *nir,
    NIR_PASS(_, nir, nir_opt_constant_folding);
    gl_nir_opts(nir);
 
+   /* Re-vectorization also removes redundant output stores. It requires scalar IO. */
+   NIR_PASS(_, nir, nir_lower_io_to_scalar, nir_var_shader_in | nir_var_shader_out,
+            NULL, NULL);
+   NIR_PASS(_, nir, nir_opt_vectorize_io, nir_var_shader_in | nir_var_shader_out);
+   NIR_PASS(_, nir, nir_opt_dce);
+
    nir_shader_gather_info(nir, nir_shader_get_entrypoint(nir));
    /* This must be done after optimizations to assign IO bases. */
    nir_recompute_io_bases(nir, nir_var_shader_in | nir_var_shader_out);
