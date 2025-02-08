@@ -36,6 +36,6 @@
     <field name="Launch Depth" start="480" end="511" type="uint" />
     <field name="Callable Group Table" start="512" end="575" type="address" />
     <field name="Callable Group Stride" start="576" end="588" type="uint" />
-    <field name="Resume Shader Table" start="607" end="671" type="address" />
+    <field name="Resume Shader Table" start="608" end="671" type="address" />
   </struct>
 </genxml>
