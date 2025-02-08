@@ -81,13 +81,6 @@ enum brw_compression {
    BRW_COMPRESSION_COMPRESSED = 2,
 };
 
-#define GFX6_COMPRESSION_1Q		0
-#define GFX6_COMPRESSION_2Q		1
-#define GFX6_COMPRESSION_3Q		2
-#define GFX6_COMPRESSION_4Q		3
-#define GFX6_COMPRESSION_1H		0
-#define GFX6_COMPRESSION_2H		2
-
 enum ENUM_PACKED brw_conditional_mod {
    BRW_CONDITIONAL_NONE = 0,
    BRW_CONDITIONAL_Z    = 1,
@@ -344,10 +337,6 @@ enum opcode {
     * Source 0: Must be register g0, used as header.
     * Source 1: Immediate bool to indicate whether control is returned to the
     *           thread only after the fence has been honored.
-    * Source 2: Immediate byte indicating which memory to fence.  Zero means
-    *           global memory; GFX7_BTI_SLM means SLM (for Gfx11+ only).
-    *
-    * Vec4 backend only uses Source 0.
     */
    SHADER_OPCODE_MEMORY_FENCE,
 
@@ -571,11 +560,12 @@ enum fb_write_logical_srcs {
    FB_WRITE_LOGICAL_SRC_COLOR1,      /* for dual source blend messages */
    FB_WRITE_LOGICAL_SRC_SRC0_ALPHA,
    FB_WRITE_LOGICAL_SRC_SRC_DEPTH,   /* gl_FragDepth */
-   FB_WRITE_LOGICAL_SRC_DST_DEPTH,   /* GFX4-5: passthrough from thread */
    FB_WRITE_LOGICAL_SRC_SRC_STENCIL, /* gl_FragStencilRefARB */
    FB_WRITE_LOGICAL_SRC_OMASK,       /* Sample Mask (gl_SampleMask) */
+   FB_WRITE_LOGICAL_SRC_TARGET,      /* REQUIRED */
    FB_WRITE_LOGICAL_SRC_COMPONENTS,  /* REQUIRED */
    FB_WRITE_LOGICAL_SRC_NULL_RT,     /* Null RT write */
+   FB_WRITE_LOGICAL_SRC_LAST_RT,     /* Last RT? (bool as UD immediate) */
    FB_WRITE_LOGICAL_NUM_SRCS
 };
 
@@ -744,6 +734,8 @@ enum interpolator_logical_srcs {
    INTERP_SRC_MSG_DESC,
    /** Flag register for dynamic mode */
    INTERP_SRC_DYNAMIC_MODE,
+   /** Whether this should use noperspective (0/1 as UD immediate) */
+   INTERP_SRC_NOPERSPECTIVE,
 
    INTERP_NUM_SRCS
 };

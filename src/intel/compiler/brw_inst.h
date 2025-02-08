@@ -162,7 +162,6 @@ public:
    uint8_t sfid; /**< SFID for SEND instructions */
    /** The number of hardware registers used for a message header. */
    uint8_t header_size;
-   uint8_t target; /**< MRT target. */
    uint32_t desc; /**< SEND[S] message descriptor immediate */
    uint32_t ex_desc; /**< SEND[S] extended message descriptor immediate */
 
@@ -192,7 +191,7 @@ public:
           */
          unsigned rcount:4;
 
-         unsigned pad:2;
+         unsigned pad:5;
 
          bool predicate_inverse:1;
          bool writes_accumulator:1; /**< instruction implicitly writes accumulator */
@@ -200,7 +199,6 @@ public:
          bool no_dd_clear:1;
          bool no_dd_check:1;
          bool saturate:1;
-         bool shadow_compare:1;
          bool check_tdr:1; /**< Only valid for SEND; turns it into a SENDC */
          bool send_has_side_effects:1; /**< Only valid for SHADER_OPCODE_SEND */
          bool send_is_volatile:1; /**< Only valid for SHADER_OPCODE_SEND */
@@ -215,8 +213,6 @@ public:
           */
          bool predicate_trivial:1;
          bool eot:1;
-         bool last_rt:1;
-         bool pi_noperspective:1;   /**< Pixel interpolator noperspective flag */
          bool keep_payload_trailing_zeros:1;
          /**
           * Whether the parameters of the SEND instructions are build with

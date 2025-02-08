@@ -197,10 +197,12 @@ brw_inst::is_control_source(unsigned arg) const
    case SHADER_OPCODE_BROADCAST:
    case SHADER_OPCODE_SHUFFLE:
    case SHADER_OPCODE_QUAD_SWIZZLE:
+      return arg == 1;
+
    case FS_OPCODE_INTERPOLATE_AT_SAMPLE:
    case FS_OPCODE_INTERPOLATE_AT_SHARED_OFFSET:
    case FS_OPCODE_INTERPOLATE_AT_PER_SLOT_OFFSET:
-      return arg == 1;
+      return arg == INTERP_SRC_MSG_DESC || arg == INTERP_SRC_NOPERSPECTIVE;
 
    case SHADER_OPCODE_MOV_INDIRECT:
    case SHADER_OPCODE_CLUSTER_BROADCAST:
@@ -531,12 +533,6 @@ brw_inst::size_read(const struct intel_device_info *devinfo, int arg) const
          const unsigned reg_unit = 2;
          return REG_SIZE * reg_unit;
       }
-      break;
-
-   case FS_OPCODE_INTERPOLATE_AT_SAMPLE:
-   case FS_OPCODE_INTERPOLATE_AT_SHARED_OFFSET:
-      if (arg == 0)
-         return mlen * REG_SIZE;
       break;
 
    case BRW_OPCODE_PLN:

@@ -21,22 +21,21 @@
 static brw_inst *
 brw_emit_single_fb_write(fs_visitor &s, const brw_builder &bld,
                          brw_reg color0, brw_reg color1,
-                         brw_reg src0_alpha, unsigned components,
+                         brw_reg src0_alpha,
+                         unsigned target, unsigned components,
                          bool null_rt)
 {
    assert(s.stage == MESA_SHADER_FRAGMENT);
    struct brw_wm_prog_data *prog_data = brw_wm_prog_data(s.prog_data);
 
-   /* Hand over gl_FragDepth or the payload depth. */
-   const brw_reg dst_depth = brw_fetch_payload_reg(bld, s.fs_payload().dest_depth_reg);
-
    brw_reg sources[FB_WRITE_LOGICAL_NUM_SRCS];
    sources[FB_WRITE_LOGICAL_SRC_COLOR0]     = color0;
    sources[FB_WRITE_LOGICAL_SRC_COLOR1]     = color1;
    sources[FB_WRITE_LOGICAL_SRC_SRC0_ALPHA] = src0_alpha;
-   sources[FB_WRITE_LOGICAL_SRC_DST_DEPTH]  = dst_depth;
+   sources[FB_WRITE_LOGICAL_SRC_TARGET]     = brw_imm_ud(target);
    sources[FB_WRITE_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(components);
    sources[FB_WRITE_LOGICAL_SRC_NULL_RT]    = brw_imm_ud(null_rt);
+   sources[FB_WRITE_LOGICAL_SRC_LAST_RT]    = brw_imm_ud(false);
 
    if (prog_data->uses_omask)
       sources[FB_WRITE_LOGICAL_SRC_OMASK] = s.sample_mask;
@@ -75,9 +74,8 @@ brw_do_emit_fb_writes(fs_visitor &s, int nr_color_regions, bool replicate_alpha)
          src0_alpha = offset(s.outputs[0], bld, 3);
 
       inst = brw_emit_single_fb_write(s, abld, s.outputs[target],
-                                      s.dual_src_output, src0_alpha, 4,
+                                      s.dual_src_output, src0_alpha, target, 4,
                                       false);
-      inst->target = target;
    }
 
    if (inst == NULL) {
@@ -104,12 +102,11 @@ brw_do_emit_fb_writes(fs_visitor &s, int nr_color_regions, bool replicate_alpha)
       const brw_reg tmp = bld.vgrf(BRW_TYPE_UD, 4);
       bld.LOAD_PAYLOAD(tmp, srcs, 4, 0);
 
-      inst = brw_emit_single_fb_write(s, bld, tmp, reg_undef, reg_undef, 4,
-                                      use_null_rt);
-      inst->target = 0;
+      inst = brw_emit_single_fb_write(s, bld, tmp, reg_undef, reg_undef,
+                                      0, 4, use_null_rt);
    }
 
-   inst->last_rt = true;
+   inst->src[FB_WRITE_LOGICAL_SRC_LAST_RT] = brw_imm_ud(true);
    inst->eot = true;
 }
 
@@ -659,7 +656,6 @@ brw_emit_repclear_shader(fs_visitor &s)
       write->mlen = 1 + write->header_size;
    }
    write->eot = true;
-   write->last_rt = true;
 
    brw_calculate_cfg(s);
 

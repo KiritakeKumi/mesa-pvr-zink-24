@@ -105,11 +105,11 @@ brw_workaround_memory_fence_before_eot(fs_visitor &s)
       brw_reg dst = ubld.vgrf(BRW_TYPE_UD);
       brw_inst *dummy_fence = ubld.emit(SHADER_OPCODE_MEMORY_FENCE,
                                        dst, brw_vec8_grf(0, 0),
-                                       /* commit enable */ brw_imm_ud(1),
-                                       /* bti */ brw_imm_ud(0));
+                                       /* commit enable */ brw_imm_ud(1));
       dummy_fence->sfid = GFX12_SFID_UGM;
       dummy_fence->desc = lsc_fence_msg_desc(s.devinfo, LSC_FENCE_TILE,
                                              LSC_FLUSH_TYPE_NONE_6, false);
+      dummy_fence->size_written = REG_SIZE * reg_unit(s.devinfo);
       ubld.emit(FS_OPCODE_SCHEDULING_FENCE, ubld.null_reg_ud(), dst);
       progress = true;
       /* TODO: remove this break if we ever have shader with multiple EOT. */
