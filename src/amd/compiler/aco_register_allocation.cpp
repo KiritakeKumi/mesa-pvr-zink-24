@@ -853,7 +853,7 @@ update_renames(ra_ctx& ctx, RegisterFile& reg_file, std::vector<parallelcopy>& p
    /* clear operands */
    for (parallelcopy& copy : parallelcopies) {
       /* the definitions with id are not from this function and already handled */
-      if (copy.def.isTemp())
+      if (copy.def.isTemp() || copy.skip_renaming)
          continue;
       reg_file.clear(copy.op);
    }
@@ -956,9 +956,9 @@ update_renames(ra_ctx& ctx, RegisterFile& reg_file, std::vector<parallelcopy>& p
 
             /* Fix the kill flags */
             if (first[omit_renaming])
-               op.setFirstKill(omit_renaming || op.isKill());
+               op.setFirstKill((omit_renaming && !copy.skip_renaming) || op.isKill());
             else
-               op.setKill(omit_renaming || op.isKill());
+               op.setKill((omit_renaming && !copy.skip_renaming) || op.isKill());
             first[omit_renaming] = false;
 
             if (omit_renaming)
@@ -967,7 +967,7 @@ update_renames(ra_ctx& ctx, RegisterFile& reg_file, std::vector<parallelcopy>& p
             op.setTemp(copy.def.getTemp());
             op.setFixed(copy.def.physReg());
 
-            fill = !op.isKillBeforeDef() || op.isPrecolored();
+            fill = (!op.isKillBeforeDef() || op.isPrecolored()) && !copy.skip_renaming;
          }
       }
 
