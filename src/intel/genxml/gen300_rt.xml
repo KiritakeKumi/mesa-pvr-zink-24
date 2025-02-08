@@ -28,8 +28,8 @@
     <field name="Flags" start="224" end="224" type="uint">
       <value name="RT_DEPTH_TEST_LESS_EQUAL" value="1" />
     </field>
-    <field name="Hit Group Table" start="260" end="319" type="address" />
-    <field name="Miss Group Table" start="323" end="383" type="address" />
+    <field name="Hit Group Table" start="256" end="319" type="address" />
+    <field name="Miss Group Table" start="320" end="383" type="address" />
     <field name="SW Stack Size" start="384" end="415" type="uint" />
     <field name="Launch Width" start="416" end="447" type="uint" />
     <field name="Launch Height" start="448" end="479" type="uint" />
