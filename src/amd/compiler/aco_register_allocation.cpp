@@ -2160,7 +2160,7 @@ handle_fixed_operands(ra_ctx& ctx, RegisterFile& register_file,
    assert(parallelcopy.empty());
 
    RegisterFile tmp_file(register_file);
-   std::unordered_map<unsigned, std::unordered_set<PhysReg>> temp_regs;
+   std::unordered_map<unsigned, std::unordered_set<Operand*>> temp_regs;
    std::vector<unsigned> blocking_vars;
 
    for (auto it = instr->operands.begin(); it != instr->operands.end(); ++it) {
@@ -2170,7 +2170,9 @@ handle_fixed_operands(ra_ctx& ctx, RegisterFile& register_file,
       assert(it->isTemp());
       adjust_max_used_regs(ctx, it->regClass(), it->physReg());
       PhysReg src = ctx.assignments[it->tempId()].reg;
-      temp_regs[it->tempId()].emplace(it->physReg());
+
+      Operand& op = *it;
+      temp_regs[it->tempId()].emplace(&op);
 
       if (src == it->physReg()) {
          tmp_file.block(it->physReg(), it->regClass());
@@ -2188,11 +2190,11 @@ handle_fixed_operands(ra_ctx& ctx, RegisterFile& register_file,
    for (auto& regs : temp_regs) {
       PhysReg src = ctx.assignments[regs.first].reg;
 
-      PhysReg live_reg = *regs.second.begin();
+      PhysReg live_reg = (*regs.second.begin())->physReg();
       if (regs.second.size() > 1) {
          bool found = false;
-         for (auto reg : regs.second) {
-            PhysRegInterval range = {reg, ctx.program->temp_rc[regs.first].size()};
+         for (auto op : regs.second) {
+            PhysRegInterval range = {op->physReg(), ctx.program->temp_rc[regs.first].size()};
             bool intersects_with_def = false;
             for (const auto& def : instr->definitions) {
                if (!def.isTemp() || !def.isFixed())
@@ -2206,28 +2208,37 @@ handle_fixed_operands(ra_ctx& ctx, RegisterFile& register_file,
             if (intersects_with_def)
                continue;
 
-            if (!found || reg == src) {
-               live_reg = reg;
+            if (!found || op->physReg() == src) {
+               live_reg = op->physReg();
                found = true;
-               if (reg == src)
+               if (op->physReg() == src)
                   break;
             }
          }
       }
 
+      bool all_kill = std::all_of(regs.second.begin(), regs.second.end(),
+                                  [](const Operand* op) { return op->isKill(); });
       RegClass rc = ctx.program->temp_rc[regs.first];
 
-      for (auto reg : regs.second) {
-         if (reg == src)
+      for (auto op : regs.second) {
+         /* Fix up operand kill flags according to live_reg choice */
+         if (op->physReg() == live_reg)
+            op->setKill(all_kill);
+         else
+            op->setCopyKill(true);
+
+         if (op->physReg() == src)
             continue;
 
-         Definition copy_def = Definition(reg, rc);
-         parallelcopy.emplace_back(Operand(Temp(regs.first, rc), src), copy_def, reg != live_reg);
+         Definition copy_def = Definition(op->physReg(), rc);
+         parallelcopy.emplace_back(Operand(Temp(regs.first, rc), src), copy_def,
+                                   op->physReg() != live_reg);
 
-         PhysRegInterval target{reg, rc.size()};
+         PhysRegInterval target{op->physReg(), rc.size()};
          std::vector<unsigned> blocking_vars2 = collect_vars(ctx, tmp_file, target);
          blocking_vars.insert(blocking_vars.end(), blocking_vars2.begin(), blocking_vars2.end());
-         tmp_file.block(reg, rc);
+         tmp_file.block(op->physReg(), rc);
       }
    }
 
