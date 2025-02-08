@@ -332,9 +332,7 @@ brw_nir_rt_load_globals_addr(nir_builder *b,
        *                  aligned GPUVA : base pointer of hit group shader
        *                  record array (16-bytes alignment)
        */
-      defs->hit_sbt_addr =
-         nir_ushr_imm(b, nir_pack_64_2x32_split(b, nir_channel(b, data, 8),
-                                nir_channel(b, data, 9)), 4);
+      defs->hit_sbt_addr = nir_pack_64_2x32(b, nir_channels(b, data, 0x3 << 8));
 
       /* Bspec 56933 (r58935):
        *
@@ -342,9 +340,7 @@ brw_nir_rt_load_globals_addr(nir_builder *b,
        *                    aligned GPUVA: base pointer of miss shader record
        *                    array (8-bytes alignment)
        */
-      defs->miss_sbt_addr =
-         nir_ushr_imm(b, nir_pack_64_2x32_split(b, nir_channel(b, data, 10),
-                                nir_channel(b, data, 11)), 3);
+      defs->miss_sbt_addr = nir_pack_64_2x32(b, nir_channels(b, data, 0x3 << 10));
    } else {
       defs->hit_sbt_addr =
          nir_pack_64_2x32_split(b, nir_channel(b, data, 8),
