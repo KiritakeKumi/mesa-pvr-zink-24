@@ -586,8 +586,11 @@ transition_stencil_buffer(struct anv_cmd_buffer *cmd_buffer,
                           bool will_full_fast_clear)
 {
 #if GFX_VER == 12
+   const VkImageAspectFlagBits aspect = image->vk.usage & VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR ?
+      VK_IMAGE_ASPECT_COLOR_BIT :
+      VK_IMAGE_ASPECT_STENCIL_BIT;
    const uint32_t plane =
-      anv_image_aspect_to_plane(image, VK_IMAGE_ASPECT_STENCIL_BIT);
+      anv_image_aspect_to_plane(image, aspect);
    if (image->planes[plane].aux_usage == ISL_AUX_USAGE_NONE)
       return;
 
@@ -610,7 +613,7 @@ transition_stencil_buffer(struct anv_cmd_buffer *cmd_buffer,
          };
 
          uint32_t aux_layers =
-            anv_image_aux_layers(image, VK_IMAGE_ASPECT_STENCIL_BIT, level);
+            anv_image_aux_layers(image, aspect, level);
 
          if (base_layer >= aux_layers)
             break; /* We will only get fewer layers as level increases */
@@ -625,7 +628,7 @@ transition_stencil_buffer(struct anv_cmd_buffer *cmd_buffer,
           *    stencil clear (HZ_OP) before any renderpass."
           */
          const VkClearDepthStencilValue clear_value = {};
-         anv_image_hiz_clear(cmd_buffer, image, VK_IMAGE_ASPECT_STENCIL_BIT,
+         anv_image_hiz_clear(cmd_buffer, image, aspect,
                              level, base_layer, level_layer_count,
                              clear_rect, &clear_value);
       }
@@ -1173,7 +1176,11 @@ transition_color_buffer(struct anv_cmd_buffer *cmd_buffer,
        */
       must_init_fast_clear_state = devinfo->ver < 20;
 
-      if (isl_aux_usage_has_mcs(image->planes[plane].aux_usage) ||
+      if (isl_surf_usage_is_cpb(image->planes[plane].primary_surface.isl.usage)) {
+         transition_stencil_buffer(cmd_buffer, image, base_level, level_count,
+                                   base_layer, layer_count, initial_layout,
+                                   final_layout, will_full_fast_clear);
+      } else if (isl_aux_usage_has_mcs(image->planes[plane].aux_usage) ||
           devinfo->has_illegal_ccs_values) {
 
          must_init_aux_surface = true;
