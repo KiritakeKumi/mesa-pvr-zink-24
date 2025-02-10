@@ -804,11 +804,11 @@ static bool si_texture_get_handle(struct pipe_screen *screen, struct pipe_contex
       }
 
       const bool debug_disable_dcc = sscreen->debug_flags & DBG(NO_EXPORTED_DCC);
-      /* Since shader image stores don't support DCC on GFX9 and older,
-       * disable it for external clients that want write access.
+      /* Disable DCC for external clients that might use shader image stores.
+       * They don't support DCC on GFX9 and older, and seem to cause sync issues
+       * on newer chips (see #12552).
        */
-      const bool shader_write = sscreen->info.gfx_level <= GFX9 &&
-                                usage & PIPE_HANDLE_USAGE_SHADER_WRITE &&
+      const bool shader_write = usage & PIPE_HANDLE_USAGE_SHADER_WRITE &&
                                 !tex->is_depth &&
                                 tex->surface.meta_offset;
        /* Another reason to disable display dcc is front buffer rendering.
