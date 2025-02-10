@@ -24,6 +24,60 @@
 #include "compiler/nir/nir_builder.h"
 #include "nir.h"
 
+/**
+ * Moves terminate{_if} intrinsics out of loops.
+ *
+ * This lowering turns:
+ *
+ *     loop {
+ *        ...
+ *        terminate_if(cond);
+ *        ...
+ *     }
+ *
+ * into:
+ *
+ *     reg = false
+ *     loop {
+ *        ...
+ *        if (cond) {
+ *           reg = true;
+ *           break;
+ *        }
+ *        ...
+ *     }
+ *     terminate_if(reg);
+ */
+static bool
+move_out_of_loop(nir_builder *b, nir_intrinsic_instr *instr)
+{
+   nir_cf_node *node = instr->instr.block->cf_node.parent;
+   while (node && node->type != nir_cf_node_loop)
+      node = node->parent;
+
+   if (node == NULL)
+      return false;
+
+   nir_block *after_loop = nir_cf_node_cf_tree_next(node);
+   nir_lower_phis_to_regs_block(after_loop);
+
+   b->cursor = nir_before_cf_node(node);
+   nir_def *cond = nir_decl_reg(b, 1, 1, 0);
+   nir_store_reg(b, nir_imm_false(b), cond);
+
+   b->cursor = nir_instr_remove(&instr->instr);
+   nir_push_if(b, instr->intrinsic == nir_intrinsic_terminate_if
+                     ? instr->src[0].ssa
+                     : nir_imm_true(b));
+   nir_store_reg(b, nir_imm_true(b), cond);
+   nir_jump(b, nir_jump_break);
+   nir_pop_if(b, NULL);
+
+   b->cursor = nir_after_cf_node(node);
+   nir_terminate_if(b, nir_load_reg(b, cond));
+   return true;
+}
+
 static bool
 lower_discard_if(nir_builder *b, nir_intrinsic_instr *instr, void *cb_data)
 {
@@ -34,7 +88,13 @@ lower_discard_if(nir_builder *b, nir_intrinsic_instr *instr, void *cb_data)
       if (!(options & nir_lower_demote_if_to_cf))
          return false;
       break;
+   case nir_intrinsic_terminate:
+      return (options & nir_move_terminate_out_of_loops) &&
+             move_out_of_loop(b, instr);
    case nir_intrinsic_terminate_if:
+      if ((options & nir_move_terminate_out_of_loops) &&
+          move_out_of_loop(b, instr))
+         return true;
       if (!(options & nir_lower_terminate_if_to_cf))
          return false;
       break;
@@ -110,8 +170,10 @@ lower_discard_if(nir_builder *b, nir_intrinsic_instr *instr, void *cb_data)
 bool
 nir_lower_discard_if(nir_shader *shader, nir_lower_discard_if_options options)
 {
-   return nir_shader_intrinsics_pass(shader,
-                                     lower_discard_if,
-                                     nir_metadata_none,
-                                     &options);
+   if (nir_shader_intrinsics_pass(shader, lower_discard_if, nir_metadata_none,
+                                  &options)) {
+      nir_lower_reg_intrinsics_to_ssa(shader);
+      return true;
+   }
+   return false;
 }
