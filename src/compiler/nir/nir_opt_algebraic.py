@@ -875,6 +875,8 @@ optimizations.extend([
    (('bcsel', a, a, b), ('ior', a, b)),
    (('bcsel', a, b, False), ('iand', a, b)),
    (('bcsel', a, b, a), ('iand', a, b)),
+   (('bcsel', a, b, True), ('ior', ('inot', a), b)),
+   (('bcsel', a, False, b), ('iand', ('inot', a), b)),
    (('~fmin', a, a), a),
    (('~fmax', a, a), a),
    (('imin', a, a), a),
