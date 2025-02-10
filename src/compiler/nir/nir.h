@@ -73,6 +73,7 @@ extern bool nir_debug_print_shader[MESA_SHADER_KERNEL + 1];
 #define NIR_DEBUG_CLONE                  (1u << 0)
 #define NIR_DEBUG_SERIALIZE              (1u << 1)
 #define NIR_DEBUG_NOVALIDATE             (1u << 2)
+#define NIR_DEBUG_EXTENDED_VALIDATION    (1u << 3)
 #define NIR_DEBUG_TGSI                   (1u << 4)
 #define NIR_DEBUG_PRINT_VS               (1u << 5)
 #define NIR_DEBUG_PRINT_TCS              (1u << 6)
@@ -92,6 +93,7 @@ extern bool nir_debug_print_shader[MESA_SHADER_KERNEL + 1];
 #define NIR_DEBUG_PRINT_NO_INLINE_CONSTS (1u << 20)
 #define NIR_DEBUG_PRINT_INTERNAL         (1u << 21)
 #define NIR_DEBUG_PRINT_PASS_FLAGS       (1u << 22)
+#define NIR_DEBUG_INVALIDATE_METADATA    (1u << 23)
 
 #define NIR_DEBUG_PRINT (NIR_DEBUG_PRINT_VS |  \
                          NIR_DEBUG_PRINT_TCS | \
@@ -4725,6 +4727,8 @@ void nir_metadata_require(nir_function_impl *impl, nir_metadata required, ...);
 void nir_metadata_preserve(nir_function_impl *impl, nir_metadata preserved);
 /** Preserves all metadata for the given shader */
 void nir_shader_preserve_all_metadata(nir_shader *shader);
+/** dirties all metadata and fills it with obviously wrong information */
+void nir_metadata_invalidate(nir_shader *shader);
 
 /** creates an instruction with default swizzle/writemask/etc. with NULL registers */
 nir_alu_instr *nir_alu_instr_create(nir_shader *shader, nir_op op);
@@ -5337,6 +5341,7 @@ void nir_validate_shader(nir_shader *shader, const char *when);
 void nir_validate_ssa_dominance(nir_shader *shader, const char *when);
 void nir_metadata_set_validation_flag(nir_shader *shader);
 void nir_metadata_check_validation_flag(nir_shader *shader);
+void nir_metadata_require_all(nir_shader *shader);
 
 static inline bool
 should_skip_nir(const char *name)
@@ -5388,6 +5393,11 @@ nir_metadata_check_validation_flag(nir_shader *shader)
 {
    (void)shader;
 }
+static inline void
+nir_metadata_require_all(nir_shader *shader)
+{
+   (void)shader;
+}
 static inline bool
 should_skip_nir(UNUSED const char *pass_name)
 {
@@ -5406,6 +5416,10 @@ should_print_nir(UNUSED nir_shader *shader)
          printf("skipping %s\n", #pass);                                \
          break;                                                         \
       }                                                                 \
+      if (NIR_DEBUG(INVALIDATE_METADATA))                               \
+         nir_metadata_invalidate(nir);                                  \
+      else if (NIR_DEBUG(EXTENDED_VALIDATION))                          \
+         nir_metadata_require_all(nir);                                 \
       do_pass if (NIR_DEBUG(CLONE))                                     \
       {                                                                 \
          nir_shader *_clone = nir_shader_clone(ralloc_parent(nir), nir);\
@@ -5430,6 +5444,8 @@ should_print_nir(UNUSED nir_shader *shader)
       if (should_print_nir(nir))                                                            \
          nir_print_shader(nir, stdout);                                                     \
       nir_metadata_check_validation_flag(nir);                                              \
+   } else if (NIR_DEBUG(EXTENDED_VALIDATION)) {                                             \
+      nir_validate_shader(nir, "after " #pass " in " __FILE__ ":" NIR_STRINGIZE(__LINE__)); \
    }                                                                                        \
 })
 
