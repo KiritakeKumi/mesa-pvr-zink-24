@@ -212,6 +212,9 @@ enum tu_cmd_flush_bits {
    TU_CMD_FLAG_BINDLESS_DESCRIPTOR_INVALIDATE = 1 << 10,
    /* This is an unusual flush that isn't automatically executed if pending,
     * as it isn't necessary. Therefore, it's not included in ALL_FLUSH.
+    *
+    * Note: On A7XX this is CCU_RESOLVE_CLEAN which is non-blocking so you
+    * should emit a WFI for it.
     */
    TU_CMD_FLAG_BLIT_CACHE_CLEAN = 1 << 11,
    TU_CMD_FLAG_RTU_INVALIDATE = 1 << 12,
