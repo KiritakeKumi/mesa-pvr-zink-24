@@ -60,6 +60,7 @@
 		dri_query_dma_buf_modifiers;
 		dri2_query_dma_buf_format_modifier_attribs;
 		dri_query_compatible_render_only_device_fd;
+		dri2_query_graphics;
 		driSWRastQueryBufferAge;
 		dri_set_damage_region;
 		dri_fence_get_caps;
