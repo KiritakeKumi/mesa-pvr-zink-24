@@ -22,6 +22,7 @@
 #include "agx_opcodes.h"
 #include "glsl_types.h"
 #include "nir.h"
+#include "nir_builder_opcodes.h"
 #include "nir_builtin_builder.h"
 #include "nir_intrinsics.h"
 #include "nir_intrinsics_indices.h"
@@ -2998,6 +2999,9 @@ agx_optimize_nir(nir_shader *nir, bool soft_fault, uint16_t *preamble_size)
 
    agx_optimize_loop_nir(nir);
 
+   NIR_PASS(_, nir, nir_opt_vectorize, nir_swar_vectorize_cb, NULL);
+   NIR_PASS(_, nir, nir_lower_swar);
+
    /* If soft fault is enabled, we can freely speculate everything. That lets us
     * peephole select and form preambles more aggressively.
     */
@@ -3708,7 +3712,7 @@ agx_preprocess_nir(nir_shader *nir)
    NIR_PASS(_, nir, nir_lower_idiv, &idiv_options);
    NIR_PASS(_, nir, nir_lower_frexp);
    NIR_PASS(_, nir, nir_lower_alu);
-   NIR_PASS(_, nir, nir_lower_alu_to_scalar, NULL, NULL);
+   NIR_PASS(_, nir, nir_lower_alu_width, nir_swar_vectorize_cb, NULL);
    NIR_PASS(_, nir, nir_lower_load_const_to_scalar);
    NIR_PASS(_, nir, nir_lower_flrp, 16 | 32 | 64, false);
    NIR_PASS(_, nir, agx_lower_sincos);
@@ -3799,7 +3803,7 @@ agx_compile_shader_nir(nir_shader *nir, struct agx_shader_key *key,
    NIR_PASS(_, nir, nir_lower_bit_size, lower_bit_size_callback, NULL);
 
    /* Late blend lowering creates vectors */
-   NIR_PASS(_, nir, nir_lower_alu_to_scalar, NULL, NULL);
+   NIR_PASS(_, nir, nir_lower_alu_width, nir_swar_vectorize_cb, NULL);
    NIR_PASS(_, nir, nir_lower_load_const_to_scalar);
 
    /* Late VBO lowering creates constant udiv instructions */
