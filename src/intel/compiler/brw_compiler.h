@@ -229,9 +229,29 @@ struct brw_base_prog_key {
 #define MAX_GL_VERT_ATTRIB     VERT_ATTRIB_MAX
 #define MAX_VK_VERT_ATTRIB     (VERT_ATTRIB_GENERIC0 + 28)
 
+/**
+ * Use the last 2 slots :
+ *   - slot 32: start vertex, vextex count, instance count, start instance
+ *   - slot 33: base vertex, base instance, draw id
+ */
+#define BRW_SVGS_VE_INDEX (32)
+#define BRW_DRAWID_VE_INDEX (33)
+
 /** The program key for Vertex Shaders. */
 struct brw_vs_prog_key {
    struct brw_base_prog_key base;
+
+   bool vf_component_packing : 1;
+
+   /** Prevent compaction of VF inputs
+    *
+    * So that 3DSTATE_VERTEX_ELEMENTS programming remains independent of
+    * shader inputs (essentially an unused location should have an associated
+    * VERTEX_ELEMENT_STATE).
+    */
+   bool no_vf_compaction     : 1;
+
+   uint32_t padding : 30;
 };
 
 /** The program key for Tessellation Control Shaders. */
@@ -1021,14 +1041,15 @@ struct brw_vs_prog_data {
    uint64_t inputs_read;
    uint64_t double_inputs_read;
 
-   unsigned nr_attribute_slots;
-
    bool uses_vertexid;
    bool uses_instanceid;
    bool uses_is_indexed_draw;
    bool uses_firstvertex;
    bool uses_baseinstance;
    bool uses_drawid;
+   bool no_vf_compaction;
+
+   uint32_t vf_component_packing[4];
 };
 
 struct brw_tcs_prog_data

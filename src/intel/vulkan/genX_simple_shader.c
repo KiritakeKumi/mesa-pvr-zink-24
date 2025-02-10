@@ -77,7 +77,8 @@ genX(emit_simpler_shader_init_fragment)(struct anv_simple_shader *state)
          .Component3Control   = VFCOMP_STORE_1_FP,
       });
 
-   anv_batch_emit(batch, GENX(3DSTATE_VF_STATISTICS), vf);
+   anv_batch_emit(batch, GENX(3DSTATE_VF_STATISTICS), vfs);
+   anv_batch_emit(batch, GENX(3DSTATE_VF), vf);
    anv_batch_emit(batch, GENX(3DSTATE_VF_SGVS), sgvs) {
       sgvs.InstanceIDEnable = true;
       sgvs.InstanceIDComponentNumber = COMP_1;

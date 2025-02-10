@@ -11,7 +11,7 @@
 #include "dev/intel_debug.h"
 
 static void
-brw_assign_vs_urb_setup(fs_visitor &s)
+brw_assign_vs_urb_setup(fs_visitor &s, unsigned nr_attribute_regs)
 {
    struct brw_vs_prog_data *vs_prog_data = brw_vs_prog_data(s.prog_data);
 
@@ -28,8 +28,170 @@ brw_assign_vs_urb_setup(fs_visitor &s)
    }
 }
 
+static unsigned
+brw_nir_pack_vs_input(nir_shader *nir, struct brw_vs_prog_data *prog_data)
+{
+   struct vf_attribute {
+      unsigned reg_offset;
+      uint8_t  component_mask;
+      bool     is_64bit:1;
+      bool     is_used:1;
+   } attributes[64] = {};
+
+   nir_foreach_shader_in_variable(var, nir) {
+      attributes[var->data.location].is_64bit =
+         glsl_type_is_64bit(glsl_without_array(var->type));
+   }
+
+   /* First mark all used inputs */
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+
+            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+            if (intrin->intrinsic != nir_intrinsic_load_input)
+               continue;
+
+            assert(intrin->def.bit_size == 32);
+
+            const struct nir_io_semantics io =
+               nir_intrinsic_io_semantics(intrin);
+
+            attributes[io.location].is_used = true;
+
+            /* SKL PRMs, Vol 2a: Command Reference: Instructions,
+             * 3DSTATE_VF_COMPONENT_PACKING:
+             *
+             *    "Software shall enable all components (XYZW) for any and all
+             *     VERTEX_ELEMENTs associated with a 256-bit SURFACE_FORMAT.
+             *     It is INVALID to disable any components in these cases."
+             *
+             * Enable this XYZW for any > 128-bit format.
+             */
+            if (nir->info.dual_slot_inputs & BITFIELD_BIT(io.location)) {
+               attributes[io.location].component_mask |= 0xff;
+            } else {
+               const uint8_t mask =
+                  nir_component_mask(intrin->num_components) <<
+                  nir_intrinsic_component(intrin);
+
+               attributes[io.location].component_mask |= mask;
+            }
+         }
+      }
+   }
+
+   /* SKL PRMs, Vol 2a: Command Reference: Instructions,
+    * 3DSTATE_VF_COMPONENT_PACKING:
+    *
+    *    "At least one component of one "valid" Vertex Element must be
+    *     enabled."
+    */
+   if ((nir->info.inputs_read & BITFIELD64_MASK(32 + VERT_ATTRIB_GENERIC0)) == 0) {
+      if (prog_data->no_vf_compaction) {
+         attributes[VERT_ATTRIB_GENERIC0].is_used = true;
+         attributes[VERT_ATTRIB_GENERIC0].component_mask = 0x1;
+      } else if (!BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_IS_INDEXED_DRAW) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_FIRST_VERTEX) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_BASE_INSTANCE) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_VERTEX_ID_ZERO_BASE) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_INSTANCE_ID) &&
+                 !BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_DRAW_ID)) {
+         attributes[VERT_ATTRIB_GENERIC0].is_used = true;
+         attributes[VERT_ATTRIB_GENERIC0].component_mask = 0x1;
+      }
+   }
+
+   /* Compute the register offsets */
+   unsigned reg_offset = 0;
+   unsigned vertex_element = 0;
+   for (unsigned a = 0; a < ARRAY_SIZE(attributes); a++) {
+      if (!attributes[a].is_used)
+         continue;
+
+      /* SKL PRMs, Vol 2a: Command Reference: Instructions,
+       * 3DSTATE_VF_COMPONENT_PACKING:
+       *
+       *    "No enable bits are provided for Vertex Elements [32-33],
+       *     and therefore no packing is performed on these elements (if
+       *     Valid, all 4 components are stored)."
+       */
+      if (vertex_element >= 32 ||
+          (prog_data->no_vf_compaction && a >= VERT_ATTRIB_GENERIC0 + 32))
+         attributes[a].component_mask = 0xf;
+
+      attributes[a].reg_offset = reg_offset;
+
+      reg_offset += util_bitcount(attributes[a].component_mask);
+      vertex_element++;
+   }
+
+   /* Remap inputs */
+   nir_foreach_function_impl(impl, nir) {
+      nir_foreach_block(block, impl) {
+         nir_foreach_instr(instr, block) {
+            if (instr->type != nir_instr_type_intrinsic)
+               continue;
+
+            nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+            if (intrin->intrinsic != nir_intrinsic_load_input)
+               continue;
+
+            struct nir_io_semantics io = nir_intrinsic_io_semantics(intrin);
+
+            unsigned slot = attributes[io.location].reg_offset / 4;
+            unsigned slot_component =
+               attributes[io.location].reg_offset % 4 +
+               util_bitcount(attributes[io.location].component_mask &
+                             BITFIELD_MASK(io.high_dvec2 ? 4 : 0 +
+                                           nir_intrinsic_component(intrin)));
+
+            slot += slot_component / 4;
+            slot_component %= 4;
+
+            nir_intrinsic_set_base(intrin, slot);
+            nir_intrinsic_set_component(intrin, slot_component);
+         }
+      }
+   }
+
+   /* Generate the packing array */
+   unsigned vf_element_count = 0;
+   for (unsigned a = 0; a < ARRAY_SIZE(attributes) && vf_element_count < 32; a++) {
+      if (!attributes[a].is_used)
+         continue;
+
+      uint32_t mask;
+      /* Stores masks in attributes[a].component_mask are in terms of 32-bit
+       * components, but the HW depending on the format will interpret
+       * prog_data->vf_component_packing[] bits as either a 32-bit or 64-bit
+       * component. So we need to only consider every other bit.
+       */
+      if (attributes[a].is_64bit) {
+         mask = 0;
+         u_foreach_bit(b, attributes[a].component_mask)
+            mask |= BITFIELD_BIT(b / 2);
+      } else {
+         mask = attributes[a].component_mask;
+      }
+
+      if (prog_data->no_vf_compaction) {
+         prog_data->vf_component_packing[(a - VERT_ATTRIB_GENERIC0) / 8] |=
+            mask << (4 * ((a - VERT_ATTRIB_GENERIC0) % 8));
+      } else {
+         prog_data->vf_component_packing[vf_element_count / 8] |=
+            mask << (4 * (vf_element_count % 8));
+      }
+      vf_element_count++;
+   }
+
+   return reg_offset;
+}
+
 static bool
-run_vs(fs_visitor &s)
+run_vs(fs_visitor &s, unsigned nr_attribute_regs)
 {
    assert(s.stage == MESA_SHADER_VERTEX);
 
@@ -47,7 +209,7 @@ run_vs(fs_visitor &s)
    brw_optimize(s);
 
    s.assign_curb_setup();
-   brw_assign_vs_urb_setup(s);
+   brw_assign_vs_urb_setup(s, nr_attribute_regs);
 
    brw_lower_3src_null_dest(s);
    brw_workaround_memory_fence_before_eot(s);
@@ -72,6 +234,8 @@ brw_compile_vs(const struct brw_compiler *compiler,
                                    params->base.debug_flag : DEBUG_VS);
    const unsigned dispatch_width = brw_geometry_stage_dispatch_width(compiler->devinfo);
 
+   assert(!key->no_vf_compaction || key->vf_component_packing);
+
    prog_data->base.base.stage = MESA_SHADER_VERTEX;
    prog_data->base.base.ray_queries = nir->info.ray_queries;
    prog_data->base.base.total_scratch = 0;
@@ -80,9 +244,18 @@ brw_compile_vs(const struct brw_compiler *compiler,
 
    prog_data->inputs_read = nir->info.inputs_read;
    prog_data->double_inputs_read = nir->info.vs.double_inputs;
+   prog_data->no_vf_compaction = key->no_vf_compaction;
 
    brw_nir_lower_vs_inputs(nir);
    brw_nir_lower_vue_outputs(nir);
+
+   memset(prog_data->vf_component_packing, 0,
+          sizeof(prog_data->vf_component_packing));
+   //print_vs_input(nir);
+   unsigned nr_packed_regs = 0;
+   if (key->vf_component_packing)
+      nr_packed_regs = brw_nir_pack_vs_input(nir, prog_data);
+
    brw_postprocess_nir(nir, compiler, debug_enabled,
                        key->base.robust_flags);
 
@@ -92,8 +265,9 @@ brw_compile_vs(const struct brw_compiler *compiler,
       ((1 << nir->info.cull_distance_array_size) - 1) <<
       nir->info.clip_distance_array_size;
 
-   unsigned nr_attribute_slots = util_bitcount64(prog_data->inputs_read);
+   unsigned nr_input_attribute_slots = util_bitcount64(prog_data->inputs_read);
 
+   unsigned nr_svgs_attribute_slots = 0;
    /* gl_VertexID and gl_InstanceID are system values, but arrive via an
     * incoming vertex attribute.  So, add an extra slot.
     */
@@ -101,13 +275,13 @@ brw_compile_vs(const struct brw_compiler *compiler,
        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_BASE_INSTANCE) ||
        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_VERTEX_ID_ZERO_BASE) ||
        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_INSTANCE_ID)) {
-      nr_attribute_slots++;
+      nr_svgs_attribute_slots++;
    }
 
    /* gl_DrawID and IsIndexedDraw share its very own vec4 */
    if (BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_DRAW_ID) ||
        BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_IS_INDEXED_DRAW)) {
-      nr_attribute_slots++;
+      nr_svgs_attribute_slots++;
    }
 
    if (BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_IS_INDEXED_DRAW))
@@ -126,17 +300,25 @@ brw_compile_vs(const struct brw_compiler *compiler,
       prog_data->uses_instanceid = true;
 
    if (BITSET_TEST(nir->info.system_values_read, SYSTEM_VALUE_DRAW_ID))
-          prog_data->uses_drawid = true;
+      prog_data->uses_drawid = true;
 
-   prog_data->base.urb_read_length = DIV_ROUND_UP(nr_attribute_slots, 2);
-   prog_data->nr_attribute_slots = nr_attribute_slots;
+   unsigned nr_attribute_regs;
+   if (key->vf_component_packing) {
+      prog_data->base.urb_read_length = DIV_ROUND_UP(nr_packed_regs, 8);
+      nr_attribute_regs = nr_packed_regs;
+   } else {
+      prog_data->base.urb_read_length =
+         DIV_ROUND_UP(nr_input_attribute_slots + nr_svgs_attribute_slots, 2);
+      nr_attribute_regs = 4 * (nr_input_attribute_slots + nr_svgs_attribute_slots);
+   }
 
    /* Since vertex shaders reuse the same VUE entry for inputs and outputs
     * (overwriting the original contents), we need to make sure the size is
     * the larger of the two.
     */
    const unsigned vue_entries =
-      MAX2(nr_attribute_slots, (unsigned)prog_data->base.vue_map.num_slots);
+      MAX2(DIV_ROUND_UP(nr_attribute_regs, 4),
+           (unsigned)prog_data->base.vue_map.num_slots);
 
    prog_data->base.urb_entry_size = DIV_ROUND_UP(vue_entries, 4);
 
@@ -150,7 +332,7 @@ brw_compile_vs(const struct brw_compiler *compiler,
    fs_visitor v(compiler, &params->base, &key->base,
                 &prog_data->base.base, nir, dispatch_width,
                 params->base.stats != NULL, debug_enabled);
-   if (!run_vs(v)) {
+   if (!run_vs(v, nr_attribute_regs)) {
       params->base.error_str =
          ralloc_strdup(params->base.mem_ctx, v.fail_msg);
       return NULL;
