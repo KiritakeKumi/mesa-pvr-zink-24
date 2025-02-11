@@ -1971,14 +1971,26 @@ typedef enum {
     * whether the intrinsic can be safely eliminated if none of its output
     * value is not being used.
     */
-   NIR_INTRINSIC_CAN_ELIMINATE = (1 << 0),
+   NIR_INTRINSIC_CAN_ELIMINATE = BITFIELD_BIT(0),
 
    /**
     * Whether the intrinsic can be reordered with respect to any other
     * intrinsic, i.e. whether the only reordering dependencies of the
     * intrinsic are due to the register reads/writes.
     */
-   NIR_INTRINSIC_CAN_REORDER = (1 << 1),
+   NIR_INTRINSIC_CAN_REORDER = BITFIELD_BIT(1),
+
+   /**
+    * Identifies any subgroup-like operation whose behaviour depends on other
+    * logical threads. This is incompatible with CAN_REORDER.
+    */
+   NIR_INTRINSIC_SUBGROUP = BITFIELD_BIT(2),
+
+   /**
+    * Identifies an operation whose behaviour depends (only) on the local quad.
+    * Any QUADGROUP intrinsic is also SUBGROUP.
+    */
+   NIR_INTRINSIC_QUADGROUP = BITFIELD_BIT(3),
 } nir_intrinsic_semantic_flag;
 
 /**
@@ -2163,6 +2175,13 @@ void nir_rewrite_image_intrinsic(nir_intrinsic_instr *instr,
 bool nir_intrinsic_can_reorder(nir_intrinsic_instr *instr);
 
 bool nir_intrinsic_writes_external_memory(const nir_intrinsic_instr *instr);
+
+static inline bool
+nir_intrinsic_has_semantic(const nir_intrinsic_instr *intr,
+                           nir_intrinsic_semantic_flag flag)
+{
+   return nir_intrinsic_infos[intr->intrinsic].flags & flag;
+}
 
 static inline bool
 nir_intrinsic_is_ray_query(nir_intrinsic_op intrinsic)
