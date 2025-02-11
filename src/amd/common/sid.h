@@ -322,6 +322,10 @@
 #define   S_D10_ENGINE_SEL(x)                         ((x & 1) << 0)
 #define   S_D10_PREEMPTABLE(x)                        ((x & 1) << 1)
 #define   S_D10_CACHE_POLICY(x)                       ((x & 3) << 2)
+#define     CACHE_POLICY_LRU                          0x0
+#define     CACHE_POLICY_STREAM                       0x1
+#define     CACHE_POLICY_NOA                          0x2
+#define     CACHE_POLICY_BYPASS                       0x3
 #define   S_D10_POLL_INTERVAL(x)                      ((x & 0xFFFF) << 16)
 
 #define PKT2_NOP_PAD PKT_TYPE_S(2)
