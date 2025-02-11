@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "brw_fs.h"
+#include "brw_shader.h"
 #include "brw_generator.h"
 #include "brw_eu.h"
 #include "brw_nir.h"
@@ -11,7 +11,7 @@
 #include "dev/intel_debug.h"
 
 static void
-brw_assign_vs_urb_setup(fs_visitor &s)
+brw_assign_vs_urb_setup(brw_shader &s)
 {
    struct brw_vs_prog_data *vs_prog_data = brw_vs_prog_data(s.prog_data);
 
@@ -29,11 +29,11 @@ brw_assign_vs_urb_setup(fs_visitor &s)
 }
 
 static bool
-run_vs(fs_visitor &s)
+run_vs(brw_shader &s)
 {
    assert(s.stage == MESA_SHADER_VERTEX);
 
-   s.payload_ = new vs_thread_payload(s);
+   s.payload_ = new brw_vs_thread_payload(s);
 
    brw_from_nir(&s);
 
@@ -147,7 +147,7 @@ brw_compile_vs(const struct brw_compiler *compiler,
 
    prog_data->base.dispatch_mode = INTEL_DISPATCH_MODE_SIMD8;
 
-   fs_visitor v(compiler, &params->base, &key->base,
+   brw_shader v(compiler, &params->base, &key->base,
                 &prog_data->base.base, nir, dispatch_width,
                 params->base.stats != NULL, debug_enabled);
    if (!run_vs(v)) {
