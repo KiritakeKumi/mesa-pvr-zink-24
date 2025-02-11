@@ -368,6 +368,13 @@ lower_vec816_alu(const nir_instr *instr, const void *cb_data)
   return 4;
 }
 
+static bool
+should_lower_image_atomics(const nir_intrinsic_instr *intrin,
+                           const void *data)
+{
+   return true;
+}
+
 void
 midgard_preprocess_nir(nir_shader *nir, unsigned gpu_id)
 {
@@ -442,7 +449,8 @@ midgard_preprocess_nir(nir_shader *nir, unsigned gpu_id)
    };
 
    NIR_PASS(_, nir, nir_lower_tex, &lower_tex_options);
-   NIR_PASS(_, nir, nir_lower_image_atomics_to_global);
+   NIR_PASS(_, nir, nir_lower_image_atomics_to_global,
+            should_lower_image_atomics, NULL);
 
    /* TEX_GRAD fails to apply sampler descriptor settings on some
     * implementations, requiring a lowering.

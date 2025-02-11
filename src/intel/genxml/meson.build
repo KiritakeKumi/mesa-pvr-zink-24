@@ -57,6 +57,7 @@ genX_bits_included_symbols = [
   # structures
   'RENDER_SURFACE_STATE::Surface Base Address',
   'RENDER_SURFACE_STATE::Surface Pitch',
+  'RENDER_SURFACE_STATE::Surface QPitch',
   'RENDER_SURFACE_STATE::Auxiliary Surface Base Address',
   'RENDER_SURFACE_STATE::Auxiliary Surface Pitch',
   'RENDER_SURFACE_STATE::Clear Value Address',
