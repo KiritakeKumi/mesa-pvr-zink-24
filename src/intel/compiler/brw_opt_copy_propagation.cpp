@@ -935,14 +935,50 @@ try_copy_propagate(fs_visitor &s, brw_inst *inst,
    return true;
 }
 
+/**
+ * Handle cases like UW subreads of a UD immediate, with an offset.
+ */
+static brw_reg
+extract_imm(brw_reg val, brw_reg_type type, unsigned offset)
+{
+   assert(val.file == IMM);
+
+   const unsigned bitsize = brw_type_size_bits(type);
+
+   if (offset == 0 || bitsize == brw_type_size_bits(val.type))
+      return val;
+
+   /* The whole extracted value must come from bits that acutally exist in the
+    * original immediate value.
+    */
+   assert((8 * offset) + bitsize <= brw_type_size_bits(val.type));
+
+   val.u64 = (val.u64 >> (8 * offset)) & ((1ull << bitsize) - 1);
+
+   return val;
+}
+
 static bool
-try_constant_propagate_value(brw_reg val, brw_reg_type dst_type,
+try_constant_propagate_value(const intel_device_info *devinfo,
+                             brw_reg val, brw_reg_type dst_type,
                              brw_inst *inst, int arg)
 {
    bool progress = false;
 
-   if (brw_type_size_bytes(val.type) > 4)
-      return false;
+   if (brw_type_size_bytes(val.type) > 4) {
+      if (devinfo->ver < 20)
+         return false;
+
+      if (inst->src[arg].type != BRW_TYPE_Q &&
+          inst->src[arg].type != BRW_TYPE_UQ) {
+         return false;
+      }
+
+      if (brw_type_size_bits(val.type) !=
+          brw_type_size_bits(dst_type)) {
+         return false;
+      }
+   }
 
    /* If the size of the use type is smaller than the size of the entry,
     * clamp the value to the range of the use type.  This enables constant
@@ -959,15 +995,8 @@ try_constant_propagate_value(brw_reg val, brw_reg_type dst_type,
           brw_type_size_bytes(dst_type) != 4)
          return false;
 
-      assert(inst->src[arg].subnr == 0 || inst->src[arg].subnr == 2);
-
-      /* When subnr is 0, we want the lower 16-bits, and when it's 2, we
-       * want the upper 16-bits. No other values of subnr are valid for a
-       * UD source.
-       */
-      const uint16_t v = inst->src[arg].subnr == 2 ? val.ud >> 16 : val.ud;
-
-      val.ud = v | (uint32_t(v) << 16);
+      val = extract_imm(val, inst->src[arg].type, inst->src[arg].subnr);
+      val = brw_imm_uw(val.ud);
    }
 
    val.type = inst->src[arg].type;
@@ -982,6 +1011,41 @@ try_constant_propagate_value(brw_reg val, brw_reg_type dst_type,
    if (inst->src[arg].negate) {
       if (is_logic_op(inst->opcode) ||
           !brw_reg_negate_immediate(&val)) {
+         return false;
+      }
+   }
+
+   /* Some instructions can use a D or UD immediate value in a Q or UQ
+    * instruction.
+    */
+   if (inst->src[arg].type == BRW_TYPE_Q ||
+       inst->src[arg].type == BRW_TYPE_UQ) {
+      if (inst->src[arg].type == BRW_TYPE_Q) {
+         if (val.d64 < INT32_MIN || val.d64 > INT32_MAX)
+            return false;
+
+         val.type = BRW_TYPE_D;
+      } else {
+         if (val.u64 > UINT32_MAX)
+            return false;
+
+         val.type = BRW_TYPE_UD;
+      }
+
+      switch (inst->opcode) {
+      case BRW_OPCODE_ADD:
+      case BRW_OPCODE_ASR:
+      case BRW_OPCODE_SHR:
+         break;
+
+      case BRW_OPCODE_SHL:
+         /* SHL performs the shift, then expands to 64-bit. */
+         if (arg == 0)
+            return false;
+
+         break;
+
+      default:
          return false;
       }
    }
@@ -1233,7 +1297,8 @@ try_constant_propagate(const struct intel_device_info *devinfo,
        brw_type_size_bits(entry->dst.type))
       return false;
 
-   return try_constant_propagate_value(entry->src, entry->dst.type, inst, arg);
+   return try_constant_propagate_value(devinfo, entry->src, entry->dst.type,
+                                       inst, arg);
 }
 
 static bool
@@ -1723,27 +1788,7 @@ try_constant_propagate_def(const struct intel_device_info *devinfo,
    if (inst->size_read(devinfo, arg) > def->dst.component_size(inst->exec_size))
       return false;
 
-   return try_constant_propagate_value(val, def->dst.type, inst, arg);
-}
-
-/**
- * Handle cases like UW subreads of a UD immediate, with an offset.
- */
-static brw_reg
-extract_imm(brw_reg val, brw_reg_type type, unsigned offset)
-{
-   assert(val.file == IMM);
-
-   const unsigned bitsize = brw_type_size_bits(type);
-
-   if (offset == 0 || bitsize == brw_type_size_bits(val.type))
-      return val;
-
-   assert(bitsize < brw_type_size_bits(val.type));
-
-   val.u64 = (val.u64 >> (bitsize * offset)) & ((1ull << bitsize) - 1);
-
-   return val;
+   return try_constant_propagate_value(devinfo, val, def->dst.type, inst, arg);
 }
 
 static brw_reg
