@@ -790,7 +790,9 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
       if (shader->info.stage == MESA_SHADER_FRAGMENT)
          shader->info.fs.needs_quad_helper_invocations = true;
       break;
-
+   case nir_intrinsic_load_coverage_mask:
+      BITSET_SET(shader->info.system_values_read, SYSTEM_VALUE_SAMPLE_MASK_IN);
+      break;
    case nir_intrinsic_vote_any:
    case nir_intrinsic_vote_all:
    case nir_intrinsic_vote_feq:
