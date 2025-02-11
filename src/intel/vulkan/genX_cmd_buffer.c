@@ -4315,9 +4315,9 @@ cmd_buffer_accumulate_barrier_bits(struct anv_cmd_buffer *cmd_buffer,
           * barriers within renderpass are operating with consistent layouts.
           */
          if (!cmd_buffer->vk.runtime_rp_barrier &&
-             cmd_buffer->vk.render_pass != NULL) {
-            assert(anv_cmd_graphics_state_has_image_as_attachment(&cmd_buffer->state.gfx,
-                                                                  image));
+             cmd_buffer->vk.render_pass != NULL &&
+             anv_cmd_graphics_state_has_image_as_attachment(&cmd_buffer->state.gfx,
+                                                            image)) {
             VkImageLayout subpass_att_layout, subpass_stencil_att_layout;
 
             vk_command_buffer_get_attachment_layout(
