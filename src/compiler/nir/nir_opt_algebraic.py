@@ -1464,6 +1464,7 @@ optimizations.extend([
    (('bcsel', a, ('b2i', 'b@1'), 1), ('b2i', ('bcsel', a, b, True))),
    (('bcsel', a, 0, ('b2i', 'b@1')), ('b2i', ('bcsel', a, False, b))),
    (('bcsel', a, 1, ('b2i', 'b@1')), ('b2i', ('bcsel', a, True, b))),
+   (('inot', ('ineg', ('b2i', a))), ('ineg', ('b2i', ('inot', a)))),
 ])
 
 optimizations.extend([
