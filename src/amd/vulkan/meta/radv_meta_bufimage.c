@@ -663,11 +663,12 @@ fixup_gfx9_cs_copy(struct radv_cmd_buffer *cmd_buffer, const struct radv_meta_bl
       uint32_t x = (coordY < hw_mip_extent.height) ? hw_mip_extent.width : 0;
       for (; x < mip_extent.width; x++) {
          uint32_t coordX = x + mip_offset.x;
-         uint64_t addr = ac_surface_addr_from_coord(pdev->addrlib, gpu_info, surf, &surf_info, mip_level, coordX,
-                                                    coordY, img_bsurf->layer, image->vk.image_type == VK_IMAGE_TYPE_3D);
+         uint64_t img_offset =
+            ac_surface_addr_from_coord(pdev->addrlib, gpu_info, surf, &surf_info, mip_level, coordX, coordY,
+                                       img_bsurf->layer, image->vk.image_type == VK_IMAGE_TYPE_3D);
          struct radeon_winsys_bo *img_bo = image->bindings[0].bo;
          struct radeon_winsys_bo *mem_bo = buf_bsurf->buffer->bo;
-         const uint64_t img_va = radv_buffer_get_va(img_bo) + image->bindings[0].offset + addr;
+         const uint64_t img_va = image->bindings[0].addr + img_offset;
          /* buf_bsurf->offset already includes the layer offset */
          const uint64_t mem_va =
             buf_bsurf->buffer->addr + buf_bsurf->offset + y * buf_bsurf->pitch * surf->bpe + x * surf->bpe;
@@ -773,29 +774,28 @@ radv_meta_buffer_to_image_cs_r32g32b32(struct radv_cmd_buffer *cmd_buffer, struc
 
    radv_meta_bind_descriptors(
       cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 2,
-      (VkDescriptorGetInfoEXT[]){
-         {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
-            .data.pUniformTexelBuffer =
-               &(VkDescriptorAddressInfoEXT){
-                  .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
-                  .address = src->buffer->addr + src->offset,
-                  .range = vk_buffer_range(&src->buffer->vk, src->offset, VK_WHOLE_SIZE),
-                  .format = src->format,
-               },
-         },
-         {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
-            .data.pStorageTexelBuffer =
-               &(VkDescriptorAddressInfoEXT){
-                  .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
-                  .address = radv_buffer_get_va(dst->image->bindings[0].bo) + dst->image->bindings[0].offset,
-                  .range = dst->image->size,
-                  .format = get_r32g32b32_format(dst->format),
-               },
-         }});
+      (VkDescriptorGetInfoEXT[]){{
+                                    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+                                    .type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+                                    .data.pUniformTexelBuffer =
+                                       &(VkDescriptorAddressInfoEXT){
+                                          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
+                                          .address = src->buffer->addr + src->offset,
+                                          .range = vk_buffer_range(&src->buffer->vk, src->offset, VK_WHOLE_SIZE),
+                                          .format = src->format,
+                                       },
+                                 },
+                                 {
+                                    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+                                    .type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
+                                    .data.pStorageTexelBuffer =
+                                       &(VkDescriptorAddressInfoEXT){
+                                          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
+                                          .address = dst->image->bindings[0].addr,
+                                          .range = dst->image->size,
+                                          .format = get_r32g32b32_format(dst->format),
+                                       },
+                                 }});
 
    radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer), VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
@@ -905,29 +905,28 @@ radv_meta_image_to_image_cs_r32g32b32(struct radv_cmd_buffer *cmd_buffer, struct
 
    radv_meta_bind_descriptors(
       cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 2,
-      (VkDescriptorGetInfoEXT[]){
-         {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
-            .data.pUniformTexelBuffer =
-               &(VkDescriptorAddressInfoEXT){
-                  .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
-                  .address = radv_buffer_get_va(src->image->bindings[0].bo) + src->image->bindings[0].offset,
-                  .range = src->image->size,
-                  .format = get_r32g32b32_format(src->format),
-               },
-         },
-         {
-            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-            .type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
-            .data.pStorageTexelBuffer =
-               &(VkDescriptorAddressInfoEXT){
-                  .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
-                  .address = radv_buffer_get_va(dst->image->bindings[0].bo) + dst->image->bindings[0].offset,
-                  .range = dst->image->size,
-                  .format = get_r32g32b32_format(dst->format),
-               },
-         }});
+      (VkDescriptorGetInfoEXT[]){{
+                                    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+                                    .type = VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER,
+                                    .data.pUniformTexelBuffer =
+                                       &(VkDescriptorAddressInfoEXT){
+                                          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
+                                          .address = src->image->bindings[0].addr,
+                                          .range = src->image->size,
+                                          .format = get_r32g32b32_format(src->format),
+                                       },
+                                 },
+                                 {
+                                    .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+                                    .type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
+                                    .data.pStorageTexelBuffer =
+                                       &(VkDescriptorAddressInfoEXT){
+                                          .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
+                                          .address = dst->image->bindings[0].addr,
+                                          .range = dst->image->size,
+                                          .format = get_r32g32b32_format(dst->format),
+                                       },
+                                 }});
 
    radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer), VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
@@ -1050,19 +1049,18 @@ radv_meta_clear_image_cs_r32g32b32(struct radv_cmd_buffer *cmd_buffer, struct ra
 
    radv_cs_add_buffer(device->ws, cmd_buffer->cs, dst->image->bindings[0].bo);
 
-   radv_meta_bind_descriptors(
-      cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 1,
-      (VkDescriptorGetInfoEXT[]){{
-         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
-         .type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
-         .data.pStorageTexelBuffer =
-            &(VkDescriptorAddressInfoEXT){
-               .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
-               .address = radv_buffer_get_va(dst->image->bindings[0].bo) + dst->image->bindings[0].offset,
-               .range = dst->image->size,
-               .format = get_r32g32b32_format(dst->format),
-            },
-      }});
+   radv_meta_bind_descriptors(cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 1,
+                              (VkDescriptorGetInfoEXT[]){{
+                                 .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT,
+                                 .type = VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER,
+                                 .data.pStorageTexelBuffer =
+                                    &(VkDescriptorAddressInfoEXT){
+                                       .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
+                                       .address = dst->image->bindings[0].addr,
+                                       .range = dst->image->size,
+                                       .format = get_r32g32b32_format(dst->format),
+                                    },
+                              }});
 
    radv_CmdBindPipeline(radv_cmd_buffer_to_handle(cmd_buffer), VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 
