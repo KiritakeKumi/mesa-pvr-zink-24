@@ -1191,16 +1191,17 @@ split_copy(lower_context* ctx, unsigned offset, Definition* def, Operand* op,
    if ((ctx->program->gfx_level < GFX10 || ctx->program->gfx_level >= GFX11) &&
        src.def.regClass().type() == RegType::vgpr)
       max_size = MIN2(max_size, 4);
-   unsigned max_align = src.def.regClass().type() == RegType::vgpr ? 4 : 16;
+   unsigned max_def_align = src.def.regClass().type() == RegType::vgpr ? 4 : 16;
+   unsigned max_op_align = src.op.regClass().type() == RegType::vgpr ? 4 : 16;
 
    /* make sure the size is a power of two and reg % bytes == 0 */
    unsigned bytes = 1;
    for (; bytes <= max_size; bytes *= 2) {
       unsigned next = bytes * 2u;
-      bool can_increase = def_reg.reg_b % MIN2(next, max_align) == 0 &&
+      bool can_increase = def_reg.reg_b % MIN2(next, max_def_align) == 0 &&
                           offset + next <= src.bytes && next <= max_size;
       if (!src.op.isConstant() && can_increase)
-         can_increase = op_reg.reg_b % MIN2(next, max_align) == 0;
+         can_increase = op_reg.reg_b % MIN2(next, max_op_align) == 0;
       for (unsigned i = 0; !ignore_uses && can_increase && (i < bytes); i++)
          can_increase = (src.uses[offset + bytes + i] == 0) == (src.uses[offset] == 0);
       if (!can_increase)
@@ -2847,6 +2848,20 @@ lower_to_hw_instr(Program* program)
                         ((32 - 1) << 11) | shader_cycles_hi);
                break;
             }
+            case aco_opcode::p_callee_stack_ptr: {
+               unsigned caller_stack_size =
+                  ctx.program->config->scratch_bytes_per_wave / ctx.program->wave_size;
+               unsigned scratch_param_size = instr->operands[0].constantValue();
+               unsigned callee_stack_start = caller_stack_size + scratch_param_size;
+               if (ctx.program->gfx_level < GFX9)
+                  callee_stack_start *= ctx.program->wave_size;
+               if (instr->operands.size() < 2)
+                  bld.sop1(aco_opcode::s_mov_b32, instr->definitions[0],
+                           Operand::c32(callee_stack_start));
+               else
+                  bld.sop2(aco_opcode::s_add_u32, instr->definitions[0], Definition(scc, s1),
+                           instr->operands[1], Operand::c32(callee_stack_start));
+            }
             default: break;
             }
          } else if (instr->isReduction()) {
@@ -2899,6 +2914,16 @@ lower_to_hw_instr(Program* program)
          } else if (instr->isMIMG() && instr->mimg().strict_wqm) {
             lower_image_sample(&ctx, instr);
             ctx.instructions.emplace_back(std::move(instr));
+         } else if (instr->isCall()) {
+            PhysReg stack_reg = instr->operands[0].physReg();
+            if (instr->operands[1].constantValue())
+               bld.sop2(aco_opcode::s_add_u32, Definition(stack_reg, s1), Definition(scc, s1),
+                        Operand(stack_reg, s1), instr->operands[1]);
+            bld.sop1(aco_opcode::s_swappc_b64, Definition(instr->definitions[0].physReg(), s2),
+                     Operand(instr->operands[3].physReg(), s2));
+            if (instr->operands[1].constantValue())
+               bld.sop2(aco_opcode::s_sub_u32, Definition(stack_reg, s1), Definition(scc, s1),
+                        Operand(stack_reg, s1), instr->operands[1]);
          } else {
             ctx.instructions.emplace_back(std::move(instr));
          }

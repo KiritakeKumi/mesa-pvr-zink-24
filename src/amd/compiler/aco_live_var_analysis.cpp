@@ -9,6 +9,29 @@
 
 namespace aco {
 
+namespace {
+void
+get_temp_register_demand(Instruction* instr, RegisterDemand& demand_before, RegisterDemand& demand_after)
+{
+   for (Definition def : instr->definitions) {
+      if (def.isKill())
+         demand_after += def.getTemp();
+      else if (def.isTemp())
+         demand_before -= def.getTemp();
+   }
+
+   for (Operand op : instr->operands) {
+      if (op.isFirstKill() || op.isCopyKill()) {
+         demand_before += op.getTemp();
+         if (op.isLateKill())
+            demand_after += op.getTemp();
+      } else if (op.isClobbered() && !op.isKill()) {
+         demand_before += op.getTemp();
+      }
+   }
+}
+}
+
 RegisterDemand
 get_live_changes(Instruction* instr)
 {
@@ -34,25 +57,20 @@ get_temp_registers(Instruction* instr)
    RegisterDemand demand_before;
    RegisterDemand demand_after;
 
-   for (Definition def : instr->definitions) {
-      if (def.isKill())
-         demand_after += def.getTemp();
-      else if (def.isTemp())
-         demand_before -= def.getTemp();
-   }
-
-   for (Operand op : instr->operands) {
-      if (op.isFirstKill() || op.isCopyKill()) {
-         demand_before += op.getTemp();
-         if (op.isLateKill())
-            demand_after += op.getTemp();
-      } else if (op.isClobbered() && !op.isKill()) {
-         demand_before += op.getTemp();
-      }
-   }
+   get_temp_register_demand(instr, demand_before, demand_after);
 
    demand_after.update(demand_before);
    return demand_after;
+}
+
+RegisterDemand get_temp_reg_changes(Instruction* instr)
+{
+   RegisterDemand demand_before;
+   RegisterDemand demand_after;
+
+   get_temp_register_demand(instr, demand_before, demand_after);
+
+   return demand_after - demand_before;
 }
 
 namespace {
@@ -167,7 +185,8 @@ process_live_temps_per_block(live_ctx& ctx, Block* block)
          break;
 
       ctx.program->needs_vcc |= instr_needs_vcc(insn);
-      insn->register_demand = RegisterDemand(new_demand.vgpr, new_demand.sgpr);
+      RegisterDemand demand_after_instr = RegisterDemand(new_demand.vgpr, new_demand.sgpr);
+      insn->register_demand = demand_after_instr;
 
       bool has_vgpr_def = false;
 
@@ -292,6 +311,42 @@ process_live_temps_per_block(live_ctx& ctx, Block* block)
             new_demand += temp;
          } else if (operand.isClobbered()) {
             operand_demand += temp;
+         }
+      }
+
+      if (insn->isCall()) {
+         /* For call instructions, definitions are live at the time s_setpc finishes,
+          * which continues execution in the callee. This means that all definitions are
+          * live concurrently with operands.
+          */
+         operand_demand += insn->definitions[0].getTemp();
+         operand_demand += insn->definitions[1].getTemp();
+
+         uint16_t max_vgpr = get_addr_vgpr_from_waves(ctx.program, ctx.program->min_waves);
+         uint16_t max_sgpr = get_addr_sgpr_from_waves(ctx.program, ctx.program->min_waves);
+
+         insn->call().preserved_regs = insn->call().abi.preservedRegisters(max_sgpr, max_vgpr);
+         insn->call().callee_preserved_limit = RegisterDemand();
+
+         for (auto& op : insn->operands) {
+            if (!op.isTemp() || !op.isPrecolored() || op.isClobbered())
+               continue;
+
+            if (op.isKill())
+               insn->call().callee_preserved_limit -= op.getTemp();
+            insn->call().preserved_regs.add(op.physReg(), op.size());
+         }
+         if (!insn->operands[0].isKill() && insn->operands[0].isClobbered())
+            insn->call().callee_preserved_limit += insn->operands[0].getTemp();
+
+         insn->call().clobbered_regs = insn->call().preserved_regs.invert(max_sgpr, max_vgpr);
+         insn->call().callee_preserved_limit += insn->call().preserved_regs.demand();
+
+         insn->call().caller_preserved_demand = demand_after_instr;
+
+         for (unsigned i = 0; i < insn->definitions.size(); ++i) {
+            if (!insn->definitions[i].isKill())
+               insn->call().caller_preserved_demand -= insn->definitions[i].getTemp();
          }
       }
 
@@ -499,6 +554,7 @@ update_vgpr_sgpr_demand(Program* program, const RegisterDemand new_demand)
    uint16_t sgpr_limit = get_addr_sgpr_from_waves(program, program->min_waves);
    uint16_t vgpr_limit = get_addr_vgpr_from_waves(program, program->min_waves);
 
+   program->cur_reg_demand = new_demand;
    /* this won't compile, register pressure reduction necessary */
    if (new_demand.vgpr > vgpr_limit || new_demand.sgpr > sgpr_limit) {
       program->num_waves = 0;
