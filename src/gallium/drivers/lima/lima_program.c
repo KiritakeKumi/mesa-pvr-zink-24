@@ -90,6 +90,7 @@ static const nir_shader_compiler_options fs_nir_options = {
    .no_integers = true,
    .support_indirect_inputs = (uint8_t)BITFIELD_MASK(PIPE_SHADER_TYPES),
    .max_varying_expression_cost = 2,
+   .has_atan = true,
 };
 
 const void *
@@ -124,6 +125,7 @@ lima_program_optimize_vs_nir(struct nir_shader *s)
    NIR_PASS_V(s, lima_nir_lower_uniform_to_scalar);
    NIR_PASS_V(s, nir_lower_io_to_scalar,
               nir_var_shader_in|nir_var_shader_out, NULL, NULL);
+   NIR_PASS_V(s, nir_lower_alu);
 
    do {
       progress = false;
@@ -179,6 +181,8 @@ lima_alu_to_scalar_filter_cb(const nir_instr *instr, const void *data)
    case nir_op_fsqrt:
    case nir_op_fsin:
    case nir_op_fcos:
+   case nir_op_atan:
+   case nir_op_atan2:
       return true;
    default:
       break;
@@ -230,6 +234,7 @@ lima_program_optimize_fs_nir(struct nir_shader *s,
 	      nir_var_shader_in | nir_var_shader_out, type_size, 0);
    NIR_PASS_V(s, nir_lower_tex, tex_options);
    NIR_PASS_V(s, lima_nir_lower_txp);
+   NIR_PASS_V(s, nir_lower_alu);
 
    do {
       progress = false;
@@ -247,6 +252,8 @@ lima_program_optimize_fs_nir(struct nir_shader *s,
       NIR_PASS(progress, s, nir_opt_dead_cf);
       NIR_PASS(progress, s, nir_opt_cse);
       NIR_PASS(progress, s, nir_opt_peephole_select, 8, true, true);
+      NIR_PASS(progress, s, lima_nir_ppir_lower_atan);
+      NIR_PASS(progress, s, lima_nir_ppir_lower_atan2_pt2);
       NIR_PASS(progress, s, nir_opt_algebraic);
       NIR_PASS(progress, s, nir_opt_constant_folding);
       NIR_PASS(progress, s, nir_opt_undef);
