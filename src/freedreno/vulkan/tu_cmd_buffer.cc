@@ -206,6 +206,12 @@ tu6_emit_flushes(struct tu_cmd_buffer *cmd_buffer,
                  TU_CMD_FLAG_WAIT_FOR_IDLE |
                  TU_CMD_FLAG_WAIT_FOR_ME;
 
+   /* CCU_RESOLVE_CLEAN seems to be non-blocking so wait for the concurrent
+    * resolves to finish.
+    */
+   if (CHIP >= A7XX && flushes & TU_CMD_FLAG_BLIT_CACHE_CLEAN)
+      flushes |= TU_CMD_FLAG_WAIT_FOR_IDLE;
+
    /* Experiments show that invalidating CCU while it still has data in it
     * doesn't work, so make sure to always flush before invalidating in case
     * any data remains that hasn't yet been made available through a barrier.
@@ -2320,6 +2326,8 @@ tu6_tile_render_end(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
    tu_lrz_tiling_end<CHIP>(cmd, cs);
 
    tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_BLIT_CACHE);
+   if (CHIP >= A7XX)
+      tu_cs_emit_wfi(cs);
 
    tu_cs_sanity_check(cs);
 }
