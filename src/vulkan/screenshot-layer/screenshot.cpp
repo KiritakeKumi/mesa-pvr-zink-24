@@ -352,10 +352,9 @@ static void device_map_queues(struct device_data *data,
                                      pCreateInfo->pQueueCreateInfos[i].queueFamilyIndex,
                                      j, &queue);
          VK_CHECK(data->set_device_loader_data(data->device, queue));
-
+         queue_index = pCreateInfo->pQueueCreateInfos[i].queueFamilyIndex;
          data->queues[queue_index] =
             new_queue_data(queue, family_props, data, queue_index);
-         queue_index++;
       }
    }
 
