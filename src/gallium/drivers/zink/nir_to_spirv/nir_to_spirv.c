@@ -39,6 +39,7 @@ struct ntv_context {
     * variables in the interface.
     */
    bool spirv_1_4_interfaces;
+   bool have_spirv16;
 
    bool explicit_lod; //whether to set lod=0 for texture()
 
@@ -2592,6 +2593,10 @@ create_builtin_var(struct ntv_context *ctx, SpvId var_type,
       case SpvBuiltInSubgroupLocalInvocationId:
          spirv_builder_emit_decoration(&ctx->builder, var, SpvDecorationFlat);
          break;
+      case SpvBuiltInHelperInvocation:
+         if (ctx->have_spirv16)
+            spirv_builder_emit_decoration(&ctx->builder, var, SpvDecorationVolatile);
+         break;
       default:
          break;
       }
@@ -3525,8 +3530,12 @@ emit_intrinsic(struct ntv_context *ctx, nir_intrinsic_instr *intr)
                                   ctx->nir->info.stage == MESA_SHADER_GEOMETRY && util_bitcount(ctx->nir->info.gs.active_stream_mask) > 1);
       break;
 
+   case nir_intrinsic_is_helper_invocation:
    case nir_intrinsic_load_helper_invocation:
-      emit_load_vec_input(ctx, intr, &ctx->helper_invocation_var, "gl_HelperInvocation", SpvBuiltInHelperInvocation, nir_type_bool);
+      if (ctx->have_spirv16 && ctx->nir->options->discard_is_demote)
+         emit_is_helper_invocation(ctx, intr);
+      else
+         emit_load_vec_input(ctx, intr, &ctx->helper_invocation_var, "gl_HelperInvocation", SpvBuiltInHelperInvocation, nir_type_bool);
       break;
 
    case nir_intrinsic_load_patch_vertices_in:
@@ -3675,10 +3684,6 @@ emit_intrinsic(struct ntv_context *ctx, nir_intrinsic_instr *intr)
 
    case nir_intrinsic_is_sparse_resident_zink:
       emit_is_sparse_texels_resident(ctx, intr);
-      break;
-
-   case nir_intrinsic_is_helper_invocation:
-      emit_is_helper_invocation(ctx, intr);
       break;
 
    case nir_intrinsic_ddx:
@@ -4602,6 +4607,7 @@ nir_to_spirv(struct nir_shader *s, const struct zink_shader_info *sinfo, const s
    ctx.builder.mem_ctx = ctx.mem_ctx;
    assert(spirv_version >= SPIRV_VERSION(1, 0));
    ctx.spirv_1_4_interfaces = spirv_version >= SPIRV_VERSION(1, 4);
+   ctx.have_spirv16 = spirv_version >= SPIRV_VERSION(1, 6);
 
    ctx.bindless_set_idx = sinfo->bindless_set_idx;
    ctx.glsl_types = _mesa_pointer_hash_table_create(ctx.mem_ctx);
