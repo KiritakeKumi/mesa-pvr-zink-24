@@ -1403,7 +1403,8 @@ static void amdgpu_cs_add_userq_packets(struct amdgpu_userq *userq,
          for (unsigned i = 0; i < num_fences; i = i + 32) {
             num_fences_in_iter = (i + 32 > num_fences) ? num_fences - i : 32;
             amdgpu_pkt_add_dw(PKT3(PKT3_FENCE_WAIT_MULTI, num_fences_in_iter * 4, 0));
-            amdgpu_pkt_add_dw(S_D10_ENGINE_SEL(1) | S_D10_POLL_INTERVAL(4) | S_D10_PREEMPTABLE(1));
+            amdgpu_pkt_add_dw(S_D10_ENGINE_SEL(1) | S_D10_POLL_INTERVAL(4) |
+                              S_D10_PREEMPTABLE(1) | S_D10_CACHE_POLICY(CACHE_POLICY_BYPASS));
             for (unsigned j = 0; j < num_fences_in_iter; j++) {
                amdgpu_pkt_add_dw(fence_info[i + j].va);
                amdgpu_pkt_add_dw(fence_info[i + j].va >> 32);
