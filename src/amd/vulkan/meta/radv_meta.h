@@ -257,24 +257,6 @@ void radv_meta_decode_etc(struct radv_cmd_buffer *cmd_buffer, struct radv_image 
 void radv_meta_decode_astc(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image, VkImageLayout layout,
                            const VkImageSubresourceLayers *subresource, VkOffset3D offset, VkExtent3D extent);
 
-/* common nir builder helpers */
-#include "nir/nir_builder.h"
-
-nir_builder PRINTFLIKE(3, 4)
-   radv_meta_init_shader(struct radv_device *dev, gl_shader_stage stage, const char *name, ...);
-
-nir_shader *radv_meta_build_nir_vs_generate_vertices(struct radv_device *dev);
-nir_shader *radv_meta_build_nir_fs_noop(struct radv_device *dev);
-
-void radv_meta_build_resolve_shader_core(struct radv_device *device, nir_builder *b, bool is_integer, int samples,
-                                         nir_variable *input_img, nir_variable *color, nir_def *img_coord);
-
-nir_def *radv_meta_load_descriptor(nir_builder *b, unsigned desc_set, unsigned binding);
-
-nir_def *get_global_ids(nir_builder *b, unsigned num_components);
-
-void radv_break_on_count(nir_builder *b, nir_variable *var, nir_def *count);
-
 uint32_t radv_fill_buffer(struct radv_cmd_buffer *cmd_buffer, const struct radv_image *image,
                           struct radeon_winsys_bo *bo, uint64_t va, uint64_t size, uint32_t value);
 
