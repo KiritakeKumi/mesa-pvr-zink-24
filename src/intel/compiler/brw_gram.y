@@ -378,6 +378,7 @@ add_label(struct brw_codegen *p, const char* label_name, enum instr_label_type t
 /* label */
 %token <string> JUMP_LABEL
 %token <string> JUMP_LABEL_TARGET
+%token JIP UIP
 
 /* opcodes */
 %token <integer> ADD ADD3 ADDC AND ASR AVG
@@ -543,7 +544,6 @@ add_label(struct brw_codegen *p, const char* label_name, enum instr_label_type t
 %type <integer> negate abs chansel math_function sharedfunction
 
 %type <string> jumplabeltarget
-%type <string> jumplabel
 
 /* SWSB */
 %token <integer> REG_DIST_CURRENT
@@ -1082,25 +1082,25 @@ jumpinstruction:
 
 /* branch instruction */
 branchinstruction:
-	predicate ENDIF execsize JUMP_LABEL instoptions
+	predicate ENDIF execsize JIP JUMP_LABEL instoptions
 	{
-		add_label(p, $4, INSTR_LABEL_JIP);
+		add_label(p, $5, INSTR_LABEL_JIP);
 
 		brw_next_insn(p, $2);
-		i965_asm_set_instruction_options(p, $5);
+		i965_asm_set_instruction_options(p, $6);
 		brw_eu_inst_set_exec_size(p->devinfo, brw_last_inst, $3);
 
 		brw_set_src0(p, brw_last_inst, brw_imm_d(0x0));
 
 		brw_pop_insn_state(p);
 	}
-	| ELSE execsize JUMP_LABEL jumplabel instoptions
+	| ELSE execsize JIP JUMP_LABEL UIP JUMP_LABEL instoptions
 	{
-		add_label(p, $3, INSTR_LABEL_JIP);
-		add_label(p, $4, INSTR_LABEL_UIP);
+		add_label(p, $4, INSTR_LABEL_JIP);
+		add_label(p, $6, INSTR_LABEL_UIP);
 
 		brw_next_insn(p, $1);
-		i965_asm_set_instruction_options(p, $5);
+		i965_asm_set_instruction_options(p, $7);
 		brw_eu_inst_set_exec_size(p->devinfo, brw_last_inst, $2);
 
 		brw_set_dest(p, brw_last_inst, retype(brw_null_reg(),
@@ -1108,13 +1108,13 @@ branchinstruction:
 		if (p->devinfo->ver < 12)
 			brw_set_src0(p, brw_last_inst, brw_imm_d(0));
 	}
-	| predicate IF execsize JUMP_LABEL jumplabel instoptions
+	| predicate IF execsize JIP JUMP_LABEL UIP JUMP_LABEL instoptions
 	{
-		add_label(p, $4, INSTR_LABEL_JIP);
-		add_label(p, $5, INSTR_LABEL_UIP);
+		add_label(p, $5, INSTR_LABEL_JIP);
+		add_label(p, $7, INSTR_LABEL_UIP);
 
 		brw_next_insn(p, $2);
-		i965_asm_set_instruction_options(p, $6);
+		i965_asm_set_instruction_options(p, $8);
 		brw_eu_inst_set_exec_size(p->devinfo, brw_last_inst, $3);
 
 		brw_set_dest(p, brw_last_inst,
@@ -1129,13 +1129,13 @@ branchinstruction:
 
 /* break instruction */
 breakinstruction:
-	predicate BREAK execsize JUMP_LABEL JUMP_LABEL instoptions
+	predicate BREAK execsize JIP JUMP_LABEL UIP JUMP_LABEL instoptions
 	{
-		add_label(p, $4, INSTR_LABEL_JIP);
-		add_label(p, $5, INSTR_LABEL_UIP);
+		add_label(p, $5, INSTR_LABEL_JIP);
+		add_label(p, $7, INSTR_LABEL_UIP);
 
 		brw_next_insn(p, $2);
-		i965_asm_set_instruction_options(p, $6);
+		i965_asm_set_instruction_options(p, $8);
 		brw_eu_inst_set_exec_size(p->devinfo, brw_last_inst, $3);
 
 		brw_set_dest(p, brw_last_inst, retype(brw_null_reg(),
@@ -1144,13 +1144,13 @@ breakinstruction:
 
 		brw_pop_insn_state(p);
 	}
-	| predicate HALT execsize JUMP_LABEL JUMP_LABEL instoptions
+	| predicate HALT execsize JIP JUMP_LABEL UIP JUMP_LABEL instoptions
 	{
-		add_label(p, $4, INSTR_LABEL_JIP);
-		add_label(p, $5, INSTR_LABEL_UIP);
+		add_label(p, $5, INSTR_LABEL_JIP);
+		add_label(p, $7, INSTR_LABEL_UIP);
 
 		brw_next_insn(p, $2);
-		i965_asm_set_instruction_options(p, $6);
+		i965_asm_set_instruction_options(p, $8);
 		brw_eu_inst_set_exec_size(p->devinfo, brw_last_inst, $3);
 
 		brw_set_dest(p, brw_last_inst, retype(brw_null_reg(),
@@ -1162,13 +1162,13 @@ breakinstruction:
 
 		brw_pop_insn_state(p);
 	}
-	| predicate CONT execsize JUMP_LABEL JUMP_LABEL instoptions
+	| predicate CONT execsize JIP JUMP_LABEL UIP JUMP_LABEL instoptions
 	{
-		add_label(p, $4, INSTR_LABEL_JIP);
-		add_label(p, $5, INSTR_LABEL_UIP);
+		add_label(p, $5, INSTR_LABEL_JIP);
+		add_label(p, $7, INSTR_LABEL_UIP);
 
 		brw_next_insn(p, $2);
-		i965_asm_set_instruction_options(p, $6);
+		i965_asm_set_instruction_options(p, $8);
 		brw_eu_inst_set_exec_size(p->devinfo, brw_last_inst, $3);
 		brw_set_dest(p, brw_last_inst, brw_ip_reg());
 
@@ -1180,12 +1180,12 @@ breakinstruction:
 
 /* loop instruction */
 loopinstruction:
-	predicate WHILE execsize JUMP_LABEL instoptions
+	predicate WHILE execsize JIP JUMP_LABEL instoptions
 	{
-		add_label(p, $4, INSTR_LABEL_JIP);
+		add_label(p, $5, INSTR_LABEL_JIP);
 
 		brw_next_insn(p, $2);
-		i965_asm_set_instruction_options(p, $5);
+		i965_asm_set_instruction_options(p, $6);
 		brw_eu_inst_set_exec_size(p->devinfo, brw_last_inst, $3);
 
 		brw_set_dest(p, brw_last_inst,
@@ -1253,11 +1253,6 @@ sync_arg:
 relativelocation2:
 	immreg
 	| reg32
-	;
-
-jumplabel:
-	JUMP_LABEL	{ $$ = $1; }
-	| /* empty */	{ $$ = NULL; }
 	;
 
 jumplabeltarget:
