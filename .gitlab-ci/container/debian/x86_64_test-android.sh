@@ -49,7 +49,6 @@ rm "$ndk.zip"
 ############### Build ANGLE
 
 ANGLE_TARGET=android \
-ANGLE_ARCH=x64 \
 DEBIAN_ARCH=amd64 \
 . .gitlab-ci/container/build-angle.sh
 
@@ -83,6 +82,8 @@ EXTRA_CMAKE_ARGS="-DDEQP_ANDROID_EXE=ON -DDEQP_TARGET_TOOLCHAIN=ndk-modern -DAND
 rm -rf /VK-GL-CTS
 
 ############### Downloading Cuttlefish resources ...
+
+uncollapsed_section_start cuttlefish "Downloading, building and installing Cuttlefish"
 
 CUTTLEFISH_PROJECT_PATH=ao2/aosp-manifest
 CUTTLEFISH_BUILD_VERSION_TAGS=mesa-venus
@@ -128,6 +129,8 @@ git checkout FETCH_HEAD
 ./tools/buildutils/build_packages.sh
 
 apt-get install -y --allow-downgrades ./cuttlefish-base_*.deb ./cuttlefish-user_*.deb
+
+section_end cuttlefish
 
 popd
 rm -rf android-cuttlefish
