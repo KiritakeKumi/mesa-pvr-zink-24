@@ -6696,12 +6696,6 @@ impl Instr {
             | Op::FMul(_)
             | Op::FSet(_)
             | Op::FSetP(_)
-            | Op::HAdd2(_)
-            | Op::HFma2(_)
-            | Op::HMul2(_)
-            | Op::HSet2(_)
-            | Op::HSetP2(_)
-            | Op::HMnMx2(_)
             | Op::FSwzAdd(_) => true,
 
             // Multi-function unit is variable latency
@@ -6713,6 +6707,14 @@ impl Instr {
             | Op::DMnMx(_)
             | Op::DMul(_)
             | Op::DSetP(_) => false,
+
+            // Half-precision float ALU
+            Op::HAdd2(_)
+            | Op::HFma2(_)
+            | Op::HMul2(_)
+            | Op::HSet2(_)
+            | Op::HSetP2(_)
+            | Op::HMnMx2(_) => false,
 
             // Integer ALU
             Op::BRev(_) | Op::Flo(_) | Op::PopC(_) => false,
