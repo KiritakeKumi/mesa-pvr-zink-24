@@ -1470,6 +1470,9 @@ optimizations.extend([
     ('iand', ('ishl', -1, b), ('ineg', ('b2i', a)))),
    (('ushr', ('ineg', ('b2i', a)), '#b'),
     ('iand', ('ushr', -1, b), ('ineg', ('b2i', a)))),
+
+   (('ine', ('b2i', 'a@1'), ('ineg', ('b2i', 'b@1'))), ('ior', a, b)),
+   (('ieq', ('b2i', 'a@1'), ('ineg', ('b2i', 'b@1'))), ('inot', ('ior', a, b))),
 ])
 
 optimizations.extend([
