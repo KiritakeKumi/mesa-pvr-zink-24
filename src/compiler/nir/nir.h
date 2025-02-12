@@ -61,6 +61,8 @@
 extern "C" {
 #endif
 
+struct util_dynarray;
+
 extern uint32_t nir_debug;
 extern bool nir_debug_print_shader[MESA_SHADER_KERNEL + 1];
 
@@ -5617,8 +5619,11 @@ typedef enum {
    nir_group_same_resource_only,
 } nir_load_grouping;
 
+bool nir_is_grouped_load(nir_instr *instr);
+nir_instr *nir_get_grouped_load_binding(nir_instr *instr);
 void nir_group_loads(nir_shader *shader, nir_load_grouping grouping,
                      unsigned max_distance);
+bool nir_reorder_adjacent_loads(nir_shader *shader);
 
 bool nir_shrink_vec_array_vars(nir_shader *shader, nir_variable_mode modes);
 bool nir_split_array_vars(nir_shader *shader, nir_variable_mode modes);
@@ -7352,6 +7357,10 @@ bool nir_instr_dominates_use(struct nir_use_dominance_state *state,
 void nir_print_use_dominators(struct nir_use_dominance_state *state,
                               nir_instr **instructions,
                               unsigned num_instructions);
+
+unsigned nir_sort_instr(nir_instr **first, nir_instr **last,
+                        int (*compare)(nir_instr **, nir_instr **),
+                        struct util_dynarray *scratch);
 
 #include "nir_inline_helpers.h"
 
