@@ -1465,6 +1465,11 @@ optimizations.extend([
    (('bcsel', a, 0, ('b2i', 'b@1')), ('b2i', ('bcsel', a, False, b))),
    (('bcsel', a, 1, ('b2i', 'b@1')), ('b2i', ('bcsel', a, True, b))),
    (('inot', ('ineg', ('b2i', a))), ('ineg', ('b2i', ('inot', a)))),
+
+   (('ishl', ('ineg', ('b2i', a)), '#b'),
+    ('iand', ('ishl', -1, b), ('ineg', ('b2i', a)))),
+   (('ushr', ('ineg', ('b2i', a)), '#b'),
+    ('iand', ('ushr', -1, b), ('ineg', ('b2i', a)))),
 ])
 
 optimizations.extend([
