@@ -712,8 +712,8 @@ bi_make_vec8_helper(bi_builder *b, bi_index *src, unsigned *channel,
          bytes[i] = bi_byte(raw_data, lane);
       }
 
-      assert(b->shader->arch >= 9 || bytes[i].swizzle == BI_SWIZZLE_B0000 ||
-             bytes[i].swizzle == BI_SWIZZLE_B2222);
+      assert(b->shader->arch >= 9 || bytes[i].swizzle == BI_SWIZZLE_B0 ||
+             bytes[i].swizzle == BI_SWIZZLE_B2);
    }
 
    if (b->shader->arch >= 9) {
@@ -2235,7 +2235,8 @@ bi_alu_src_index(bi_builder *b, nir_alu_src src, unsigned comps)
       bi_make_vec_to(b, temp, unoffset_srcs, channels, comps, bitsize);
 
       static const enum bi_swizzle swizzle_lut[] = {
-         BI_SWIZZLE_B0000, BI_SWIZZLE_B0011, BI_SWIZZLE_H01, BI_SWIZZLE_H01};
+         BI_SWIZZLE_B0000, BI_SWIZZLE_B0011, BI_SWIZZLE_B0123, BI_SWIZZLE_B0123
+      };
       assert(comps - 1 < ARRAY_SIZE(swizzle_lut));
 
       /* Assign a coherent swizzle for the vector */
@@ -2877,6 +2878,7 @@ bi_emit_alu(bi_builder *b, nir_alu_instr *instr)
       assert((src_sz == 16 || src_sz == 32) && "should be lowered");
       unsigned byte = nir_alu_src_as_uint(instr->src[1]);
 
+      /* TODO: does this break with u8vec, where swizzles may be arbitrary? */
       if (s0.swizzle == BI_SWIZZLE_H11) {
          assert(byte < 2);
          byte += 2;
@@ -4821,6 +4823,7 @@ bi_vectorize_filter(const nir_instr *instr, const void *data)
       break;
    }
 
+   /* TODO: ah, this prevents us from generating 8-bit vector instrs? */
    /* Vectorized instructions cannot write more than 32-bit */
    int dst_bit_size = alu->def.bit_size;
    if (dst_bit_size == 16)

@@ -23,6 +23,7 @@
 TEMPLATE = """#include <stdio.h>
 #include "compiler.h"
 
+/* TODO: use the appropriate size? */
 static const char *
 bi_swizzle_as_str(enum bi_swizzle swz)
 {
