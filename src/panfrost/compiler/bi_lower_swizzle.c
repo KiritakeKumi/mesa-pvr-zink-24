@@ -24,6 +24,8 @@
 #include "bi_builder.h"
 #include "bi_swizzles.h"
 #include "compiler.h"
+#include "valhall.h"
+#include "panfrost/lib/pan_props.h"
 
 /* Not all 8-bit and 16-bit instructions support all swizzles on all sources.
  * These passes, intended to run after NIR->BIR but before scheduling/RA, lower
@@ -45,6 +47,69 @@ bi_swizzle_replicates_8(enum bi_swizzle swz)
    }
 }
 
+static uint32_t
+va_op_swizzles(enum bi_opcode op, unsigned src)
+{
+   uint32_t swizzles = 0;
+   struct va_src_info info = va_src_info(op, src);
+
+   if (info.swizzle) {
+      assert(info.size == VA_SIZE_16 || info.size == VA_SIZE_32);
+      if (info.size == VA_SIZE_16)
+         swizzles |= (1 << BI_SWIZZLE_H01) | (1 << BI_SWIZZLE_H10) |
+                     (1 << BI_SWIZZLE_H01) | (1 << BI_SWIZZLE_H11);
+      else if (info.size == VA_SIZE_32)
+         swizzles |= (1 << BI_SWIZZLE_H01) | (1 << BI_SWIZZLE_H0) |
+                     (1 << BI_SWIZZLE_H1);
+   }
+
+   if (info.lane) {
+      if (info.size == VA_SIZE_8)
+         swizzles |= (1 << BI_SWIZZLE_B0) | (1 << BI_SWIZZLE_B1) | (1 << BI_SWIZZLE_B2) |
+                     (1 << BI_SWIZZLE_B3);
+      if (info.size == VA_SIZE_16)
+         swizzles |= (1 << BI_SWIZZLE_H0) | (1 << BI_SWIZZLE_H1);
+   }
+
+   if (info.lanes) {
+      assert(info.size == VA_SIZE_8);
+      swizzles |= (1 << BI_SWIZZLE_B00) | (1 << BI_SWIZZLE_B11) | (1 << BI_SWIZZLE_B22) |
+                  (1 << BI_SWIZZLE_B33);
+   }
+
+   if (info.halfswizzle) {
+      assert(info.size == VA_SIZE_8);
+      swizzles |= (1 << BI_SWIZZLE_B00) | (1 << BI_SWIZZLE_B11) | (1 << BI_SWIZZLE_B22) |
+                  (1 << BI_SWIZZLE_B33) | (1 << BI_SWIZZLE_B01) | (1 << BI_SWIZZLE_B23) |
+                  (1 << BI_SWIZZLE_B02);
+   }
+
+   if (info.widen) {
+      if (info.size == VA_SIZE_8)
+         swizzles |= (1 << BI_SWIZZLE_B0123) | (1 << BI_SWIZZLE_B0101) | (1 << BI_SWIZZLE_B2323) |
+                     (1 << BI_SWIZZLE_B0000) | (1 << BI_SWIZZLE_B1111) | (1 << BI_SWIZZLE_B2222) |
+                     (1 << BI_SWIZZLE_B3333);
+      else if (info.size == VA_SIZE_16)
+         swizzles |= (1 << BI_SWIZZLE_H00) | (1 << BI_SWIZZLE_H10) | (1 << BI_SWIZZLE_H01) |
+                     (1 << BI_SWIZZLE_H11) | (1 << BI_SWIZZLE_B00) | (1 << BI_SWIZZLE_B11) |
+                     (1 << BI_SWIZZLE_B22) | (1 << BI_SWIZZLE_B33);
+      else if (info.size == VA_SIZE_32)
+         swizzles |= (1 << BI_SWIZZLE_H01) | (1 << BI_SWIZZLE_H0) | (1 << BI_SWIZZLE_H1) |
+                     (1 << BI_SWIZZLE_B0) | (1 << BI_SWIZZLE_B1) | (1 << BI_SWIZZLE_B2) |
+                     (1 << BI_SWIZZLE_B3);
+   }
+
+   if (info.combine) {
+      assert(info.size == VA_SIZE_32);
+      swizzles |= (1 << BI_SWIZZLE_H01) | (1 << BI_SWIZZLE_H0) | (1 << BI_SWIZZLE_H1);
+   }
+
+   if (swizzles == 0)
+      swizzles = 1 << BI_SWIZZLE_H01;
+
+   return swizzles;
+}
+
 static void
 lower_swizzle(bi_context *ctx, bi_instr *ins, unsigned src)
 {
@@ -62,7 +127,8 @@ lower_swizzle(bi_context *ctx, bi_instr *ins, unsigned src)
       return;
    }
 
-   uint32_t supported_swizzles = bi_op_swizzles[ins->op][src];
+   uint32_t supported_swizzles = pan_arch(ctx->inputs->gpu_id) >= 9 ?
+      va_op_swizzles(ins->op, src) : bi_op_swizzles[ins->op][src];
    if (supported_swizzles & (1 << ins->src[src].swizzle))
       return;
 
