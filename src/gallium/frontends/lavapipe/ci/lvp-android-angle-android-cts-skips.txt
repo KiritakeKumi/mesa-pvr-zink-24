@@ -1,0 +1,13 @@
+x86_64 CtsGraphicsTestCases android.graphics.cts.AnimatorLeakTest
+x86_64 CtsGraphicsTestCases android.graphics.cts.BitmapTest
+x86_64 CtsGraphicsTestCases android.graphics.cts.CameraGpuTest
+x86_64 CtsGraphicsTestCases android.graphics.cts.FrameRateOverrideTest
+x86_64 CtsGraphicsTestCases android.graphics.cts.ImageDecoderTest
+x86_64 CtsGraphicsTestCases android.graphics.cts.MatchContentFrameRateTest
+x86_64 CtsGraphicsTestCases android.graphics.cts.SetFrameRateTest
+x86_64 CtsGraphicsTestCases android.graphics.cts.VulkanPreTransformTest
+x86_64 CtsGraphicsTestCases android.graphics.drawable.cts.AnimatedImageDrawableTest
+x86_64 CtsGraphicsTestCases android.graphics.drawable.cts.AnimatedVectorDrawableParameterizedTest
+x86_64 CtsGraphicsTestCases android.graphics.drawable.cts.AnimatedVectorDrawableTest
+x86_64 CtsGraphicsTestCases android.graphics.drawable.cts.AnimationDrawableTest
+x86_64 CtsGraphicsTestCases android.graphics.drawable.cts.IconTest

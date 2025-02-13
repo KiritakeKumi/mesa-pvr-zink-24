@@ -8,7 +8,8 @@ section_start cuttlefish_setup "cuttlefish: setup"
 set -xe
 
 export HOME=/cuttlefish
-export PATH=/cuttlefish/bin:$PATH
+export PATH=/cuttlefish/bin:/android-tools/android-cts/jdk/bin/:/android-tools/build-tools:/android-tools/platform-tools:$PATH
+export JAVA_HOME=/android-tools/android-cts/jdk
 export LD_LIBRARY_PATH=/cuttlefish/lib64:${CI_PROJECT_DIR}/install/lib:$LD_LIBRARY_PATH
 export EGL_PLATFORM=surfaceless
 
@@ -89,16 +90,6 @@ $ADB shell mount -t overlay -o "$opts" none /vendor
 
 $ADB shell setenforce 0
 
-# deqp
-
-$ADB shell mkdir -p /data/deqp
-$ADB push /deqp-gles/modules/egl/deqp-egl-android /data/deqp
-$ADB push /deqp-gles/assets/gl_cts/data/mustpass/egl/aosp_mustpass/3.2.6.x/egl-main.txt /data/deqp
-$ADB push /deqp-vk/external/vulkancts/modules/vulkan/* /data/deqp
-$ADB push /deqp-vk/mustpass/vk-main.txt.zst /data/deqp
-$ADB push /deqp-tools/* /data/deqp
-$ADB push /deqp-runner/deqp-runner /data/deqp
-
 # download Android Mesa from S3
 MESA_ANDROID_ARTIFACT_URL=https://${PIPELINE_ARTIFACTS_BASE}/${S3_ANDROID_ARTIFACT_NAME}.tar.zst
 curl -L --retry 4 -f --retry-all-errors --retry-delay 60 -o ${S3_ANDROID_ARTIFACT_NAME}.tar.zst ${MESA_ANDROID_ARTIFACT_URL}
@@ -107,19 +98,6 @@ tar -C /mesa-android -xvf ${S3_ANDROID_ARTIFACT_NAME}.tar.zst
 rm "${S3_ANDROID_ARTIFACT_NAME}.tar.zst" &
 
 INSTALL="/mesa-android/install"
-
-$ADB push "$INSTALL/all-skips.txt" /data/deqp
-$ADB push "$INSTALL/angle-skips.txt" /data/deqp
-if [ -e "$INSTALL/$GPU_VERSION-flakes.txt" ]; then
-  $ADB push "$INSTALL/$GPU_VERSION-flakes.txt" /data/deqp
-fi
-if [ -e "$INSTALL/$GPU_VERSION-fails.txt" ]; then
-  $ADB push "$INSTALL/$GPU_VERSION-fails.txt" /data/deqp
-fi
-if [ -e "$INSTALL/$GPU_VERSION-skips.txt" ]; then
-  $ADB push "$INSTALL/$GPU_VERSION-skips.txt" /data/deqp
-fi
-$ADB push "$INSTALL/deqp-$DEQP_SUITE.toml" /data/deqp
 
 # remove 32 bits libs from /vendor/lib
 
@@ -184,6 +162,57 @@ else
      exit 1
   fi
 fi
+
+if [ -n "$USE_ANDROID_CTS" ]; then
+
+# Wait for the appops service to show up
+while [ "$($ADB shell dumpsys appops)" = "" ] ; do sleep 1; done
+
+SKIP_FILE="$INSTALL/${GPU_VERSION}-android-cts-skips.txt"
+
+EXCLUDE_FILTERS=""
+if [ -e "$SKIP_FILE" ]; then
+  EXCLUDE_FILTERS+="$(sed -s 's/.*/--exclude-filter "\0" /g' < "$SKIP_FILE")"
+fi
+
+eval "/android-tools/android-cts/tools/cts-tradefed" run commandAndExit cts-dev \
+  $EXCLUDE_FILTERS \
+  --module CtsGraphicsTestCases
+
+EXIT_CODE=$?
+set -e
+section_switch cuttlefish_results "cuttlefish: gathering the results"
+
+cp -r "/android-tools/android-cts/results/latest"/* $RESULTS_DIR
+cp -r "/android-tools/android-cts/logs/latest"/* $RESULTS_DIR
+
+section_end cuttlefish_results
+
+else
+
+# deqp
+
+$ADB shell mkdir -p /data/deqp
+$ADB push /deqp-gles/modules/egl/deqp-egl-android /data/deqp
+$ADB push /deqp-gles/assets/gl_cts/data/mustpass/egl/aosp_mustpass/3.2.6.x/egl-main.txt /data/deqp
+$ADB push /deqp-vk/external/vulkancts/modules/vulkan/* /data/deqp
+$ADB push /deqp-vk/mustpass/vk-main.txt.zst /data/deqp
+$ADB push /deqp-tools/* /data/deqp
+$ADB push /deqp-runner/deqp-runner /data/deqp
+
+$ADB push "$INSTALL/all-skips.txt" /data/deqp
+$ADB push "$INSTALL/angle-skips.txt" /data/deqp
+if [ -e "$INSTALL/$GPU_VERSION-flakes.txt" ]; then
+  $ADB push "$INSTALL/$GPU_VERSION-flakes.txt" /data/deqp
+fi
+if [ -e "$INSTALL/$GPU_VERSION-fails.txt" ]; then
+  $ADB push "$INSTALL/$GPU_VERSION-fails.txt" /data/deqp
+fi
+if [ -e "$INSTALL/$GPU_VERSION-skips.txt" ]; then
+  $ADB push "$INSTALL/$GPU_VERSION-skips.txt" /data/deqp
+fi
+$ADB push "$INSTALL/deqp-$DEQP_SUITE.toml" /data/deqp
+
 
 BASELINE=""
 if [ -e "$INSTALL/$GPU_VERSION-fails.txt" ]; then
@@ -251,4 +280,7 @@ $ADB shell "cd ${AOSP_RESULTS}/..; \
 $ADB pull "$AOSP_RESULTS/junit.xml" "$RESULTS_DIR"
 
 section_end cuttlefish_results
+
+fi
+
 exit $EXIT_CODE
