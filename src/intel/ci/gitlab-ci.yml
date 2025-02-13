@@ -82,6 +82,7 @@ anv-jsl-angle:
   extends:
     - .lava-acer-cb317-1h-c3z6-dedede:x86_64
     - .anv-angle-test
+    - .test-angle
   variables:
     DEQP_SUITE: anv-jsl-angle
     GPU_VERSION: angle-anv-jsl
@@ -99,6 +100,7 @@ anv-adl-angle:
     - .lava-acer-cbv514-1h-34uz-brya:x86_64
     - .anv-test
     - .anv-angle-test
+    - .test-angle
   variables:
     DEQP_SUITE: anv-adl-angle
     GPU_VERSION: angle-anv-adl
@@ -117,6 +119,7 @@ anv-tgl-angle:
     - .lava-acer-cp514-2h-1130g7-volteer:x86_64
     - .anv-test
     - .anv-angle-test
+    - .test-angle
   variables:
     DEQP_SUITE: anv-tgl-angle
     GPU_VERSION: angle-anv-tgl

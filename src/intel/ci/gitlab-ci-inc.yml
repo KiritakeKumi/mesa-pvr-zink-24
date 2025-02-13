@@ -343,6 +343,7 @@
 .anv-angle-test:
   extends:
     - .anv-test
+    - .tag-check-angle
   variables:
     VK_DRIVER: intel
     USE_ANGLE: 1
