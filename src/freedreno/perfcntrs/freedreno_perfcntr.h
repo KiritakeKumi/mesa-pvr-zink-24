@@ -40,6 +40,7 @@ enum fd_perfcntr_type {
    FD_PERFCNTR_TYPE_UINT64,
    FD_PERFCNTR_TYPE_UINT,
    FD_PERFCNTR_TYPE_FLOAT,
+   FD_PERFCNTR_TYPE_DOUBLE,
    FD_PERFCNTR_TYPE_PERCENTAGE,
    FD_PERFCNTR_TYPE_BYTES,
    FD_PERFCNTR_TYPE_MICROSECONDS,
@@ -106,6 +107,40 @@ const struct fd_perfcntr_group *fd_perfcntrs(const struct fd_dev_id *id, unsigne
       .counters = _counters, .num_countables = ARRAY_SIZE(_countables),        \
       .countables = _countables,                                               \
    }
+
+
+#define FD_DERIVED_COUNTER_MAX_PERFCNTRS 8
+
+struct fd_derived_counter {
+   const char *name;
+   const char *category;
+   const char *description;
+
+   enum fd_perfcntr_type type;
+   unsigned num_perfcntrs;
+   uint8_t perfcntrs[FD_DERIVED_COUNTER_MAX_PERFCNTRS];
+
+   uint64_t (*derive)(uint64_t *values);
+};
+
+const struct fd_derived_counter *fd_derived_counters(const struct fd_dev_id *id, unsigned *count);
+
+#define FD_DERIVED_COUNTER_COLLECTION_MAX_DERIVED_COUNTERS 64
+#define FD_DERIVED_COUNTER_COLLECTION_MAX_ENABLED_PERFCNTRS 128
+
+struct fd_derived_counter_collection {
+   unsigned num_counters;
+   const struct fd_derived_counter *counters[FD_DERIVED_COUNTER_COLLECTION_MAX_DERIVED_COUNTERS];
+
+   unsigned num_enabled_perfcntrs;
+   struct {
+      const struct fd_perfcntr_counter *counter;
+      const struct fd_perfcntr_countable *countable;
+   } enabled_perfcntrs[FD_DERIVED_COUNTER_COLLECTION_MAX_ENABLED_PERFCNTRS];
+   uint8_t enabled_perfcntrs_map[FD_DERIVED_COUNTER_COLLECTION_MAX_ENABLED_PERFCNTRS];
+};
+
+const void fd_generate_derived_counter_collection(const struct fd_dev_id *id, struct fd_derived_counter_collection *collection);
 
 #ifdef __cplusplus
 } /* end of extern "C" */

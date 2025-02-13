@@ -1265,3 +1265,155 @@ const struct fd_perfcntr_group a7xx_perfcntr_groups[] = {
 
 const unsigned a7xx_num_perfcntr_groups = ARRAY_SIZE(a7xx_perfcntr_groups);
 
+
+enum {
+   DERIVED_COUNTER_PERFCNTR_PC_VS_INVOCATIONS,
+
+   DERIVED_COUNTER_PERFCNTR_SP_VS_STAGE_FULL_ALU_INSTRUCTIONS,
+   DERIVED_COUNTER_PERFCNTR_SP_FS_STAGE_FULL_ALU_INSTRUCTIONS,
+   DERIVED_COUNTER_PERFCNTR_SP_FS_STAGE_HALF_ALU_INSTRUCTIONS,
+   DERIVED_COUNTER_PERFCNTR_SP_PIXELS,
+
+   DERIVED_COUNTER_PERFCNTR_BV_PC_VS_INVOCATIONS,
+
+   DERIVED_COUNTER_PERFCNTR_BV_SP_VS_STAGE_FULL_ALU_INSTRUCTIONS,
+
+   DERIVED_COUNTER_PERFCNTR_MAX_VALUE,
+};
+
+static_assert(DERIVED_COUNTER_PERFCNTR_MAX_VALUE <= FD_DERIVED_COUNTER_COLLECTION_MAX_ENABLED_PERFCNTRS);
+
+#define DERIVED_COUNTER_PERFCNTR(_enum, _counter, _countable) \
+   [DERIVED_COUNTER_PERFCNTR_##_enum] = { .counter = _counter, .countable = _countable }
+
+static const struct {
+   const struct fd_perfcntr_counter *counter;
+   const struct fd_perfcntr_countable *countable;
+} a7xx_derived_counter_perfcntrs[] = {
+   DERIVED_COUNTER_PERFCNTR(PC_VS_INVOCATIONS, &pc_counters[0], &pc_countables[25]),
+
+   DERIVED_COUNTER_PERFCNTR(SP_VS_STAGE_FULL_ALU_INSTRUCTIONS, &sp_counters[0], &sp_countables[35]),
+   DERIVED_COUNTER_PERFCNTR(SP_FS_STAGE_FULL_ALU_INSTRUCTIONS, &sp_counters[1], &sp_countables[40]),
+   DERIVED_COUNTER_PERFCNTR(SP_FS_STAGE_HALF_ALU_INSTRUCTIONS, &sp_counters[2], &sp_countables[41]),
+   DERIVED_COUNTER_PERFCNTR(SP_PIXELS, &sp_counters[3], &sp_countables[101]),
+
+   DERIVED_COUNTER_PERFCNTR(BV_PC_VS_INVOCATIONS, &bv_pc_counters[0], &pc_countables[25]),
+
+   DERIVED_COUNTER_PERFCNTR(BV_SP_VS_STAGE_FULL_ALU_INSTRUCTIONS, &bv_sp_counters[0], &sp_countables[35]),
+};
+
+static uint64_t
+safe_div(uint64_t a, uint64_t b)
+{
+   double value = 0.0;
+   if (b)
+      value = a / (double) b;
+
+   union {
+      double d;
+      uint64_t u;
+   } v;
+   v.d = value;
+   return v.u;
+}
+
+static uint64_t
+derive_counter_alu_per_fragment(uint64_t *values)
+{
+   uint64_t PERFCNTR_SP_FS_STAGE_FULL_ALU_INSTRUCTIONS = values[0];
+   uint64_t PERFCNTR_SP_FS_STAGE_HALF_ALU_INSTRUCTIONS = values[1];
+   uint64_t PERFCNTR_SP_PIXELS = values[2];
+
+   return safe_div(PERFCNTR_SP_FS_STAGE_FULL_ALU_INSTRUCTIONS +
+                   PERFCNTR_SP_FS_STAGE_HALF_ALU_INSTRUCTIONS / 2,
+                   PERFCNTR_SP_PIXELS);
+}
+
+static uint64_t
+derive_counter_alu_per_vertex(uint64_t *values)
+{
+   uint64_t PERFCNTR_PC_VS_INVOCATIONS = values[0];
+   uint64_t PERFCNTR_BV_PC_VS_INVOCATIONS = values[1];
+   uint64_t PERFCNTR_SP_VS_STAGE_FULL_ALU_INSTRUCTIONS = values[2];
+   uint64_t PERFCNTR_BV_SP_VS_STAGE_FULL_ALU_INSTRUCTIONS = values[3];
+
+   return safe_div(PERFCNTR_SP_VS_STAGE_FULL_ALU_INSTRUCTIONS +
+                   PERFCNTR_BV_SP_VS_STAGE_FULL_ALU_INSTRUCTIONS,
+                   PERFCNTR_PC_VS_INVOCATIONS +
+                   PERFCNTR_BV_PC_VS_INVOCATIONS);
+}
+
+const struct fd_derived_counter a7xx_derived_counters[] = {
+   {
+      .name = "ALU / Fragment",
+      .category = "GPU Shader Processing",
+      .description = "<description>",
+      .type = FD_PERFCNTR_TYPE_DOUBLE,
+      .num_perfcntrs = 3,
+      .perfcntrs = {
+         DERIVED_COUNTER_PERFCNTR_SP_FS_STAGE_FULL_ALU_INSTRUCTIONS,
+         DERIVED_COUNTER_PERFCNTR_SP_FS_STAGE_HALF_ALU_INSTRUCTIONS,
+         DERIVED_COUNTER_PERFCNTR_SP_PIXELS,
+      },
+      .derive = derive_counter_alu_per_fragment,
+   },
+   {
+      .name = "ALU / Vertex",
+      .category = "GPU Shader Processing",
+      .description = "<description>",
+      .type = FD_PERFCNTR_TYPE_DOUBLE,
+      .num_perfcntrs = 4,
+      .perfcntrs = {
+         DERIVED_COUNTER_PERFCNTR_PC_VS_INVOCATIONS,
+         DERIVED_COUNTER_PERFCNTR_BV_PC_VS_INVOCATIONS,
+         DERIVED_COUNTER_PERFCNTR_SP_VS_STAGE_FULL_ALU_INSTRUCTIONS,
+         DERIVED_COUNTER_PERFCNTR_BV_SP_VS_STAGE_FULL_ALU_INSTRUCTIONS,
+      },
+      .derive = derive_counter_alu_per_vertex,
+   },
+};
+
+const unsigned a7xx_num_derived_counters = ARRAY_SIZE(a7xx_derived_counters);
+static_assert(ARRAY_SIZE(a7xx_derived_counters) <= FD_DERIVED_COUNTER_COLLECTION_MAX_DERIVED_COUNTERS);
+
+/* Prototype for linking purposes. */
+void
+a7xx_generate_derived_counter_collection(const struct fd_dev_id *id, struct fd_derived_counter_collection *collection);
+
+void
+a7xx_generate_derived_counter_collection(const struct fd_dev_id *id, struct fd_derived_counter_collection *collection)
+{
+   /* The provided collection should already specify the derived counters that will be measured.
+    * This function will set up enabled_perfcntrs_map and enabled_perfcntrs array so that each
+    * used DERIVED_COUNTER_PERFCNTR_* enum value will map to the corresponding index in the
+    * array where the relevant fd_perfcntr_counter and fd_perfcntr_countable are stored.
+    */
+
+   collection->num_enabled_perfcntrs = 0;
+   memset(collection->enabled_perfcntrs_map, 0xff, ARRAY_SIZE(collection->enabled_perfcntrs_map));
+
+   for (unsigned i = 0; i < collection->num_counters; ++i) {
+      const struct fd_derived_counter *counter = collection->counters[i];
+
+      for (unsigned j = 0; j < counter->num_perfcntrs; ++j) {
+         uint8_t perfcntr = counter->perfcntrs[j];
+         collection->enabled_perfcntrs_map[perfcntr] = 0x00;
+      }
+   }
+
+   for (unsigned i = 0; i < ARRAY_SIZE(collection->enabled_perfcntrs_map); ++i) {
+      if (collection->enabled_perfcntrs_map[i] == 0xff)
+         continue;
+
+      uint8_t enabled_perfcntr_index = collection->num_enabled_perfcntrs++;
+      collection->enabled_perfcntrs_map[i] = enabled_perfcntr_index;
+
+      collection->enabled_perfcntrs[enabled_perfcntr_index].counter =
+         a7xx_derived_counter_perfcntrs[i].counter;
+      collection->enabled_perfcntrs[enabled_perfcntr_index].countable =
+         a7xx_derived_counter_perfcntrs[i].countable;
+   }
+}
+
+//const void (*a7xx_generate_derived_counter_collection)(const struct fd_dev_id *id, struct fd_derived_counter_collection *collection) = a7xx_generate_derived_counter_collection_impl;
+
