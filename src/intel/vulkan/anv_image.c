@@ -234,8 +234,19 @@ anv_image_choose_isl_surf_usage(struct anv_physical_device *device,
    if (vk_usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
       isl_usage |= ISL_SURF_USAGE_RENDER_TARGET_BIT;
 
-   if (vk_usage & VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR)
+   if (vk_usage & VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR) {
       isl_usage |= ISL_SURF_USAGE_CPB_BIT;
+
+      /* The CPS compression scheme matches STC_CCS. So, we can allow
+       * compression for BLORP writes, but not for general rendering
+       * nor image stores.
+       */
+      if (vk_usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+         isl_usage |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
+
+      if (vk_usage & VK_IMAGE_USAGE_STORAGE_BIT)
+         isl_usage &= ~ISL_SURF_USAGE_STORAGE_BIT;
+      }
 
    /* TODO: consider whether compression with sparse is workable. */
    if (vk_create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT)
@@ -698,12 +709,12 @@ add_aux_surface_if_supported(struct anv_device *device,
    VkImageAspectFlags aspect = plane_format.aspect;
    VkResult result;
    bool ok;
+   const struct isl_surf primary_surf = image->planes[plane].primary_surface.isl;
 
    /* The aux surface must not be already added. */
    assert(!anv_surface_is_valid(&image->planes[plane].aux_surface));
 
-   if (image->planes[plane].primary_surface.isl.usage &
-       ISL_SURF_USAGE_DISABLE_AUX_BIT)
+   if (primary_surf.usage & ISL_SURF_USAGE_DISABLE_AUX_BIT)
       return VK_SUCCESS;
 
    uint32_t binding;
@@ -721,13 +732,13 @@ add_aux_surface_if_supported(struct anv_device *device,
        assert(!(image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT));
 
       ok = isl_surf_get_hiz_surf(&device->isl_dev,
-                                 &image->planes[plane].primary_surface.isl,
+                                 &primary_surf,
                                  &image->planes[plane].aux_surface.isl);
       if (!ok)
          return VK_SUCCESS;
 
       if (!isl_surf_supports_ccs(&device->isl_dev,
-                                 &image->planes[plane].primary_surface.isl,
+                                 &primary_surf,
                                  &image->planes[plane].aux_surface.isl)) {
          image->planes[plane].aux_usage = ISL_AUX_USAGE_HIZ;
       } else if (want_hiz_wt_for_image(device->info, image)) {
@@ -756,9 +767,9 @@ add_aux_surface_if_supported(struct anv_device *device,
          return add_aux_state_tracking_buffer(device, image, aux_state_offset,
                                               plane);
       }
-   } else if (aspect == VK_IMAGE_ASPECT_STENCIL_BIT) {
+   } else if ((aspect == VK_IMAGE_ASPECT_STENCIL_BIT) || isl_surf_usage_is_cpb(primary_surf.usage)) {
       if (!isl_surf_supports_ccs(&device->isl_dev,
-                                 &image->planes[plane].primary_surface.isl,
+                                 &primary_surf,
                                  NULL))
          return VK_SUCCESS;
 
@@ -775,11 +786,11 @@ add_aux_surface_if_supported(struct anv_device *device,
 
       if (device->info->has_flat_ccs || device->info->has_aux_map) {
          ok = isl_surf_supports_ccs(&device->isl_dev,
-                                    &image->planes[plane].primary_surface.isl,
+                                    &primary_surf,
                                     NULL);
       } else {
          ok = isl_surf_get_ccs_surf(&device->isl_dev,
-                                    &image->planes[plane].primary_surface.isl,
+                                    &primary_surf,
                                     &image->planes[plane].aux_surface.isl,
                                     stride);
       }
@@ -835,13 +846,13 @@ add_aux_surface_if_supported(struct anv_device *device,
    } else if ((aspect & VK_IMAGE_ASPECT_ANY_COLOR_BIT_ANV) && image->vk.samples > 1) {
       assert(!(image->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT));
       ok = isl_surf_get_mcs_surf(&device->isl_dev,
-                                 &image->planes[plane].primary_surface.isl,
+                                 &primary_surf,
                                  &image->planes[plane].aux_surface.isl);
       if (!ok)
          return VK_SUCCESS;
 
       if (isl_surf_supports_ccs(&device->isl_dev,
-                                &image->planes[plane].primary_surface.isl,
+                                &primary_surf,
                                 &image->planes[plane].aux_surface.isl)) {
          image->planes[plane].aux_usage = ISL_AUX_USAGE_MCS_CCS;
       } else {

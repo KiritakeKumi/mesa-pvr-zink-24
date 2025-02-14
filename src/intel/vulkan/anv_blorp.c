@@ -1536,7 +1536,15 @@ void anv_CmdClearColorImage(
                vk_image_subresource_layer_count(&image->vk, &pRanges[r]);
          }
 
-         if (anv_can_fast_clear_color(cmd_buffer, image, level, &clear_rect,
+         const bool compressed_cps_surf = (image->vk.usage & VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR) &&
+            isl_format_is_compressed(image->planes[0].aux_usage);
+         if (compressed_cps_surf) {
+            blorp_hiz_clear_depth_stencil(&batch, NULL, &surf, level,
+                                          clear_rect.baseArrayLayer,
+                                          clear_rect.layerCount,
+                                          0, 0, level_extent.width,
+                                          level_extent.height, false, 0, true, clear_color.u32[0]);
+         } else if (anv_can_fast_clear_color(cmd_buffer, image, level, &clear_rect,
                                       imageLayout, src_format.isl_format,
                                       clear_color)) {
             assert(level == 0);
