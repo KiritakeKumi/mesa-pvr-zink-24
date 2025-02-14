@@ -4020,6 +4020,8 @@ nine_ureg_create_shader(struct ureg_program                  *ureg,
     if (so)
         state.stream_output = *so;
 
+    state.report_compile_errors = false;
+
     switch (shader_type) {
     case PIPE_SHADER_VERTEX:
         return pipe->create_vs_state(pipe, &state);
