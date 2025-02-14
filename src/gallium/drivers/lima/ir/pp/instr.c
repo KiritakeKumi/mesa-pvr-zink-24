@@ -229,6 +229,26 @@ bool ppir_instr_insert_node(ppir_instr *instr, ppir_node *node)
             continue;
          }
 
+         if (pos == PPIR_INSTR_SLOT_ALU_COMBINE) {
+            ppir_dest *dest = ppir_node_get_dest(node);
+            if (!ppir_target_is_scalar(dest))
+               continue;
+            /* Combiner doesn't have pipeline destination */
+            if (dest->type == ppir_target_pipeline)
+               continue;
+
+            /* No modifiers on vector output */
+            if (node->op == ppir_op_mul && dest->modifier != ppir_outmod_none)
+               continue;
+
+            /* No modifiers on vector source on combiner */
+            if (ppir_node_get_src_num(node) == 2) {
+               ppir_src *src = ppir_node_get_src(node, 1);
+               if (src->negate || src->absolute)
+                  continue;
+            }
+         }
+
          if (pos == PPIR_INSTR_SLOT_ALU_SCL_MUL ||
              pos == PPIR_INSTR_SLOT_ALU_SCL_ADD) {
             ppir_dest *dest = ppir_node_get_dest(node);
