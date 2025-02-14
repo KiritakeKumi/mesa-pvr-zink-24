@@ -595,6 +595,12 @@ optimizations.extend([
     (('ushr', ('iand', a, ('bfm', c, b)), b),
      ('ubfe', a, b, c), 'options->has_bfe'),
 
+    (('ushr@32', ('iand(is_used_once)', a, '#b(is_const_bfm)'), '#c'),
+     ('bcsel', ('ilt', ('find_lsb', b), ('iand', c, 0x1f)),
+      ('ushr', ('ubfe', a, ('find_lsb', b), ('bit_count', b)), ('isub', c, ('find_lsb', b))),
+      ('ishl', ('ubfe', a, ('find_lsb', b), ('bit_count', b)), ('isub', ('find_lsb', b), c))),
+     'options->has_bfe && !options->avoid_ternary_with_two_constants'),
+
     # Collapse two bitfield extracts with constant operands into a single one.
     (('ubfe', ('ubfe', a, '#b', '#c'), '#d', '#e'),
      ubfe_ubfe(a, b, c, d, e)),
@@ -695,6 +701,10 @@ optimizations.extend([
    (('ine', ('ineg', a), 0),  ('ine', a, 0)),
    (('ieq', ('iabs', a), 0),  ('ieq', a, 0)),
    (('ine', ('iabs', a), 0),  ('ine', a, 0)),
+
+   (('ieq', ('ineg', a), ('ineg', b)), ('ieq', a, b)),
+   (('ine', ('ineg', a), ('ineg', b)), ('ine', a, b)),
+
    (('fneu', ('fabs', a), 0.0), ('fneu', a, 0.0)),
    (('feq', ('fabs', a), 0.0), ('feq', a, 0.0)),
    (('fneu', ('fabs', a), ('fabs', a)), ('fneu', a, a)),
