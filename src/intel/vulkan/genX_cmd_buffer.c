@@ -4609,8 +4609,16 @@ genX(flush_pipeline_select)(struct anv_cmd_buffer *cmd_buffer,
     * The new RESOURCE_BARRIER instruction has support for synchronizing
     * 3D/Compute and once we switch to that we should be able to get rid of
     * this CS_STALL.
+    *
+    * We need RT cache flush as well when switching from 3D to GPGPU,
+    * otherwise rendering artifacts can be seen with multiple workloads.
     */
    anv_add_pending_pipe_bits(cmd_buffer, ANV_PIPE_CS_STALL_BIT, "pipeline switch stall");
+
+   if (cmd_buffer->state.current_pipeline == _3D && pipeline == GPGPU)
+      anv_add_pending_pipe_bits(cmd_buffer,
+                                ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT,
+                                "pipeline switch RT flush");
 
    /* Since we are not stalling/flushing caches explicitly while switching
     * between the pipelines, we need to apply data dependency flushes recorded
