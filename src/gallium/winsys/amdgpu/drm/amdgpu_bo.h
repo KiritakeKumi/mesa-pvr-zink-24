@@ -92,6 +92,7 @@ struct amdgpu_bo_real {
    /* Timeline point of latest VM ioctl completion. Only used in userqueue. */
    uint64_t vm_timeline_point;
 
+   uint64_t va; /* used if va_handle is NULL */
    void *cpu_ptr; /* for user_ptr and permanent maps */
    int map_count;
    uint32_t kms_handle;

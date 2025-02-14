@@ -91,6 +91,11 @@ void si_init_resource_fields(struct si_screen *sscreen, struct si_resource *res,
    if (res->b.b.bind & PIPE_BIND_CUSTOM)
       res->flags |= RADEON_FLAG_NO_SUBALLOC;
 
+   /* The frontend assigns addresses so we can't sub allocate at all.
+    */
+   if (res->b.b.flags & PIPE_RESOURCE_FLAG_FRONTEND_VM)
+      res->flags |= RADEON_FLAG_NO_SUBALLOC | RADEON_FLAG_NO_VMA;
+
    if (res->b.b.bind & PIPE_BIND_PROTECTED ||
        /* Force scanout/depth/stencil buffer allocation to be encrypted */
        (sscreen->debug_flags & DBG(TMZ) &&
@@ -252,6 +257,11 @@ static bool si_invalidate_buffer(struct si_context *sctx, struct si_resource *bu
     * broken when the buffer is explicitly re-allocated.
     */
    if (buf->b.is_user_ptr)
+      return false;
+
+   /* Can't reallocate when this resource can't change its address.
+    */
+   if (buf->flags & PIPE_RESOURCE_FLAG_FIXED_ADDRESS)
       return false;
 
    /* Check if mapping this buffer would cause waiting for the GPU. */
@@ -754,11 +764,48 @@ static bool si_resource_commit(struct pipe_context *pctx, struct pipe_resource *
       return si_texture_commit(ctx, res, level, box, commit);
 }
 
+static uint64_t si_resource_get_address(struct pipe_screen *screen,
+                                        struct pipe_resource *resource)
+{
+   struct si_resource *res = si_resource(resource);
+   return res->gpu_address;
+}
+
+static bool si_alloc_vm(struct pipe_screen *screen, uint64_t start, uint64_t size)
+{
+   struct si_screen *sscreen = si_screen(screen);
+   return sscreen->ws->alloc_vm(sscreen->ws, start, size) == 0;
+}
+
+static void si_free_vm(struct pipe_screen *screen, uint64_t start, uint64_t size)
+{
+   struct si_screen *sscreen = si_screen(screen);
+   sscreen->ws->free_vm(sscreen->ws, start);
+}
+
+static bool si_resource_assign_vma(struct pipe_screen *screen,
+                                   struct pipe_resource *resource,
+                                   uint64_t address)
+{
+   struct si_screen *sscreen = si_screen(screen);
+   struct si_resource *res = si_resource(resource);
+
+   int ret = sscreen->ws->buffer_assign_vma(sscreen->ws, res->buf, address);
+   if (!ret)
+      res->gpu_address = address;
+
+   return ret == 0;
+}
+
 void si_init_screen_buffer_functions(struct si_screen *sscreen)
 {
    sscreen->b.resource_create = si_resource_create;
    sscreen->b.resource_destroy = si_resource_destroy;
    sscreen->b.resource_from_user_memory = si_buffer_from_user_memory;
+   sscreen->b.resource_get_address = si_resource_get_address;
+   sscreen->b.alloc_vm = si_alloc_vm;
+   sscreen->b.free_vm = si_free_vm;
+   sscreen->b.resource_assign_vma = si_resource_assign_vma;
 }
 
 void si_init_buffer_functions(struct si_context *sctx)

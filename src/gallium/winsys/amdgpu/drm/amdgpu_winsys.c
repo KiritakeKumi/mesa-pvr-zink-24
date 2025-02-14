@@ -96,6 +96,8 @@ static void do_winsys_deinit(struct amdgpu_winsys *aws)
    pb_cache_deinit(&aws->bo_cache);
    _mesa_hash_table_destroy(aws->bo_export_table, NULL);
    simple_mtx_destroy(&aws->sws_list_lock);
+   _mesa_hash_table_u64_destroy(aws->vma_allocs);
+   simple_mtx_destroy(&aws->vma_allocs_lock);
 #if MESA_DEBUG
    simple_mtx_destroy(&aws->global_bo_list_lock);
 #endif
@@ -502,6 +504,7 @@ amdgpu_winsys_create(int fd, const struct pipe_screen_config *config,
       list_inithead(&aws->global_bo_list);
 #endif
       aws->bo_export_table = util_hash_table_create_ptr_keys();
+      aws->vma_allocs = _mesa_hash_table_u64_create(NULL);
 
       (void) simple_mtx_init(&aws->sws_list_lock, mtx_plain);
 #if MESA_DEBUG
@@ -509,6 +512,7 @@ amdgpu_winsys_create(int fd, const struct pipe_screen_config *config,
 #endif
       (void) simple_mtx_init(&aws->bo_fence_lock, mtx_plain);
       (void) simple_mtx_init(&aws->bo_export_table_lock, mtx_plain);
+      (void) simple_mtx_init(&aws->vma_allocs_lock, mtx_plain);
 
       if (!util_queue_init(&aws->cs_queue, "cs", 8, 1,
                            UTIL_QUEUE_INIT_RESIZE_IF_FULL, NULL)) {
