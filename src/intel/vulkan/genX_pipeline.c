@@ -1443,6 +1443,35 @@ emit_3dstate_te(struct anv_graphics_pipeline *pipeline)
    }
 }
 
+static unsigned
+vertex_count_for_vk_topology(VkPrimitiveTopology primitive_topology)
+{
+   switch (primitive_topology) {
+      case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
+         return 1;
+
+      case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+      case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
+         return 2;
+
+      case VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY:
+      case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY:
+         return 4;
+
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+         return 3;
+
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY:
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY:
+         return 6;
+
+      default:
+         unreachable("Unsupported primitive topology");
+   }
+}
+
 static void
 emit_3dstate_gs(struct anv_graphics_pipeline *pipeline)
 {
@@ -1452,7 +1481,8 @@ emit_3dstate_gs(struct anv_graphics_pipeline *pipeline)
       return;
    }
 
-   const struct intel_device_info *devinfo = pipeline->base.base.device->info;
+   const struct anv_device *device = pipeline->base.base.device;
+   const struct intel_device_info *devinfo = device->info;
    const struct anv_shader_bin *gs_bin =
       pipeline->base.shaders[MESA_SHADER_GEOMETRY];
    const struct brw_gs_prog_data *gs_prog_data = get_gs_prog_data(pipeline);
@@ -1482,7 +1512,10 @@ emit_3dstate_gs(struct anv_graphics_pipeline *pipeline)
       gs.ControlDataHeaderSize   = gs_prog_data->control_data_header_size_hwords;
       gs.InstanceControl         = MAX2(gs_prog_data->invocations, 1) - 1;
 
-      gs.ExpectedVertexCount     = gs_prog_data->vertices_in;
+      gs.ExpectedVertexCount     =
+         device->physical->instance->anv_gs_use_pipeline_topology ?
+         vertex_count_for_vk_topology(pipeline->dynamic_state.ia.primitive_topology) :
+         gs_prog_data->vertices_in;
       gs.StaticOutput            = gs_prog_data->static_vertex_count >= 0;
       gs.StaticOutputVertexCount = gs_prog_data->static_vertex_count >= 0 ?
          gs_prog_data->static_vertex_count : 0;
