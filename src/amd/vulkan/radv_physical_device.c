@@ -74,6 +74,18 @@ radv_taskmesh_enabled(const struct radv_physical_device *pdev)
 }
 
 static bool
+radv_compute_queue_enabled(const struct radv_physical_device *pdev)
+{
+   const struct radv_instance *instance = radv_physical_device_instance(pdev);
+
+   if (instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE)
+      return false;
+
+   /* BC-250 card (GFX1013) is known to have broken compute queue */
+   return pdev->info.ip[AMD_IP_COMPUTE].num_queues > 0 && pdev->info.family != CHIP_GFX1013;
+}
+
+static bool
 radv_transfer_queue_enabled(const struct radv_physical_device *pdev)
 {
    const struct radv_instance *instance = radv_physical_device_instance(pdev);
@@ -283,7 +295,6 @@ radv_get_device_uuid(const struct radeon_info *gpu_info, void *uuid)
 static void
 radv_physical_device_init_queue_table(struct radv_physical_device *pdev)
 {
-   const struct radv_instance *instance = radv_physical_device_instance(pdev);
    int idx = 0;
    pdev->vk_queue_to_radv[idx] = RADV_QUEUE_GENERAL;
    idx++;
@@ -291,7 +302,7 @@ radv_physical_device_init_queue_table(struct radv_physical_device *pdev)
    for (unsigned i = 1; i < RADV_MAX_QUEUE_FAMILIES; i++)
       pdev->vk_queue_to_radv[i] = RADV_MAX_QUEUE_FAMILIES + 1;
 
-   if (pdev->info.ip[AMD_IP_COMPUTE].num_queues > 0 && !(instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE)) {
+   if (radv_compute_queue_enabled(pdev)) {
       pdev->vk_queue_to_radv[idx] = RADV_QUEUE_COMPUTE;
       idx++;
    }
@@ -2378,10 +2389,10 @@ static void
 radv_get_physical_device_queue_family_properties(struct radv_physical_device *pdev, uint32_t *pCount,
                                                  VkQueueFamilyProperties **pQueueFamilyProperties)
 {
-   const struct radv_instance *instance = radv_physical_device_instance(pdev);
    int num_queue_families = 1;
    int idx;
-   if (pdev->info.ip[AMD_IP_COMPUTE].num_queues > 0 && !(instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE))
+
+   if (radv_compute_queue_enabled(pdev))
       num_queue_families++;
 
    if (pdev->video_decode_enabled) {
@@ -2423,7 +2434,7 @@ radv_get_physical_device_queue_family_properties(struct radv_physical_device *pd
       idx++;
    }
 
-   if (pdev->info.ip[AMD_IP_COMPUTE].num_queues > 0 && !(instance->debug_flags & RADV_DEBUG_NO_COMPUTE_QUEUE)) {
+   if (radv_compute_queue_enabled(pdev)) {
       VkQueueFlags compute_flags = VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_SPARSE_BINDING_BIT;
       if (*pCount > idx) {
          *pQueueFamilyProperties[idx] = (VkQueueFamilyProperties){

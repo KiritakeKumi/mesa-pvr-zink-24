@@ -94,6 +94,7 @@
 #define AMDGPU_NAVI22_RANGE     0x32, 0x3C //# 50  <= x < 60
 #define AMDGPU_NAVI23_RANGE     0x3C, 0x46 //# 60  <= x < 70
 #define AMDGPU_NAVI24_RANGE     0x46, 0x50 //# 70  <= x < 80
+#define AMDGPU_GFX1013_RANGE    0x84, 0x85 //# 132 <= x < 133
 
 #define AMDGPU_VANGOGH_RANGE    0x01, 0xFF //# 1 <= x < max
 
