@@ -550,7 +550,7 @@ jm_emit_tiler_draw(struct mali_draw_packed *out, struct panfrost_batch *batch,
          (rast->multisample &&
           ((ctx->min_samples > 1) || ctx->valhall_has_blend_shader));
 
-      cfg.single_sampled_lines = !rast->multisample;
+      cfg.aligned_line_ends = !rast->line_rectangular;
 
       cfg.vertex_array.packet = true;
 
@@ -559,10 +559,8 @@ jm_emit_tiler_draw(struct mali_draw_packed *out, struct panfrost_batch *batch,
 
       cfg.depth_stencil = batch->depth_stencil;
 
-      if (prim == MESA_PRIM_LINES && rast->line_smooth) {
+      if (prim == MESA_PRIM_LINES && rast->line_smooth)
          cfg.multisample_enable = true;
-         cfg.single_sampled_lines = false;
-      }
 
       if (fs_required) {
          bool has_oq = ctx->occlusion_query && ctx->active_queries;
