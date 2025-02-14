@@ -1563,6 +1563,13 @@ dri2_query_dma_buf_format_modifier_attribs(struct dri_screen *screen,
    }
 }
 
+bool
+dri2_query_graphics(struct dri_screen *screen)
+{
+   struct pipe_screen *pscreen = screen->base.screen;
+   return pscreen->caps.graphics;
+}
+
 struct dri_image *
 dri2_from_dma_bufs(struct dri_screen *screen,
                     int width, int height, int fourcc,

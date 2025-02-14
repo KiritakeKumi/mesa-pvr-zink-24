@@ -170,19 +170,24 @@ nouveau_zink_predicate(int fd, const char *driver)
  * try to open their render node. It returns the fd of the first device that
  * it can open.
  */
-int
-loader_open_render_node_platform_device(const char * const drivers[],
-                                        unsigned int n_drivers)
+int *
+loader_open_render_node_platform_devices(const char * const drivers[],
+                                         unsigned int n_drivers,
+                                         unsigned int *n_devices)
 {
    drmDevicePtr devices[MAX_DRM_DEVICES], device;
    int num_devices, fd = -1;
    int i, j;
    bool found = false;
+   int *result;
 
    num_devices = drmGetDevices2(0, devices, MAX_DRM_DEVICES);
    if (num_devices <= 0)
-      return -ENOENT;
+      return NULL;
 
+   result = calloc(n_drivers, num_devices);
+
+   *n_devices = 0;
    for (i = 0; i < num_devices; i++) {
       device = devices[i];
 
@@ -206,22 +211,18 @@ loader_open_render_node_platform_device(const char * const drivers[],
                break;
             }
          }
-         if (!found) {
-            drmFreeVersion(version);
-            close(fd);
-            continue;
-         }
 
          drmFreeVersion(version);
-         break;
+
+         if (found)
+            result[(*n_devices)++] = fd;
+         else
+            close(fd);
       }
    }
    drmFreeDevices(devices, num_devices);
 
-   if (i == num_devices)
-      return -ENOENT;
-
-   return fd;
+   return result;
 }
 
 bool

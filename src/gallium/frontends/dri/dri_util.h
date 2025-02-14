@@ -341,4 +341,8 @@ dri_set_blob_cache_funcs(struct dri_screen *screen, __DRIblobCacheSet set,
 
 PUBLIC struct pipe_screen *
 dri_get_pipe_screen(struct dri_screen *driScreen);
+
+PUBLIC bool
+dri2_query_graphics(struct dri_screen *screen);
+
 #endif /* _DRI_UTIL_H_ */
