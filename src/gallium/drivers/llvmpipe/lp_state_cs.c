@@ -396,6 +396,7 @@ generate_compute(struct llvmpipe_context *lp,
    LLVMSetFunctionCallConv(coro, LLVMCCallConv);
    lp_build_coro_add_presplit(coro);
 
+
    variant->function = function;
    variant->function_name = MALLOC(strlen(func_name)+1);
    strcpy(variant->function_name, func_name);
@@ -560,10 +561,17 @@ generate_compute(struct llvmpipe_context *lp,
       }
    }
 
+   lp_function_add_debug_info(gallivm, function, func_type);
+
    block = LLVMAppendBasicBlockInContext(gallivm->context, function, "entry");
    builder = gallivm->builder;
    assert(builder);
    LLVMPositionBuilderAtEnd(builder, block);
+
+   if (gallivm->di_function) {
+      LLVMSetCurrentDebugLocation2(
+        gallivm->builder, LLVMDIBuilderCreateDebugLocation(gallivm->context, 0, 0, gallivm->di_function, NULL));
+   }
 
    if (is_mesh) {
       LLVMTypeRef output_type = create_mesh_jit_output_type_deref(gallivm);
@@ -693,6 +701,14 @@ generate_compute(struct llvmpipe_context *lp,
    if (is_mesh)
       output_array = LLVMGetParam(coro, CS_ARG_CORO_OUTPUTS);
    block = LLVMAppendBasicBlockInContext(gallivm->context, coro, "entry");
+
+   lp_function_add_debug_info(gallivm, coro, coro_func_type);
+
+   if (gallivm->di_function) {
+      LLVMSetCurrentDebugLocation2(
+         gallivm->builder, LLVMDIBuilderCreateDebugLocation(gallivm->context, 0, 0, gallivm->di_function, NULL));
+   }
+
    LLVMPositionBuilderAtEnd(builder, block);
    {
       LLVMValueRef consts_ptr;

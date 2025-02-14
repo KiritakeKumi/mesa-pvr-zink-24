@@ -40,6 +40,8 @@
 #include "nir_deref.h"
 #include "nir_search_helpers.h"
 
+#include <sys/stat.h>
+
 
 // Doing AOS (and linear) codegen?
 static bool
@@ -154,6 +156,12 @@ glsl_sampler_to_pipe(int sampler_dim, bool is_array)
 static LLVMValueRef
 get_src(struct lp_build_nir_context *bld_base, nir_src src)
 {
+   struct gallivm_state *gallivm = bld_base->base.gallivm;
+   if (gallivm->di_builder && bld_base->ssa_types) {
+      return LLVMBuildLoad2(gallivm->builder, bld_base->ssa_types[src.ssa->index],
+                            bld_base->ssa_defs[src.ssa->index], "");
+   }
+
    return bld_base->ssa_defs[src.ssa->index];
 }
 
@@ -161,7 +169,14 @@ get_src(struct lp_build_nir_context *bld_base, nir_src src)
 static void
 assign_ssa(struct lp_build_nir_context *bld_base, int idx, LLVMValueRef ptr)
 {
-   bld_base->ssa_defs[idx] = ptr;
+   struct gallivm_state *gallivm = bld_base->base.gallivm;
+   if (gallivm->di_builder && bld_base->ssa_types) {
+      bld_base->ssa_defs[idx] = lp_build_alloca(gallivm, LLVMTypeOf(ptr), "");
+      LLVMBuildStore(gallivm->builder, ptr, bld_base->ssa_defs[idx]);
+      bld_base->ssa_types[idx] = LLVMTypeOf(ptr);
+   } else {
+      bld_base->ssa_defs[idx] = ptr;
+   }
 }
 
 
@@ -2803,8 +2818,26 @@ visit_call(struct lp_build_nir_context *bld_base,
 }
 
 static void
+visit_debug_info(struct lp_build_nir_context *bld_base,
+                 nir_debug_info_instr *instr)
+{
+   struct gallivm_state *gallivm = bld_base->base.gallivm;
+
+   if (instr->type == nir_debug_info_src_loc && gallivm->di_function) {
+      LLVMMetadataRef di_loc = LLVMDIBuilderCreateDebugLocation(
+         gallivm->context, instr->src_loc.line, instr->src_loc.column, gallivm->di_function, NULL);
+      LLVMSetCurrentDebugLocation2(gallivm->builder, di_loc);
+
+      bld_base->line = instr->src_loc.line;
+      bld_base->column = instr->src_loc.column;
+   }
+}
+
+static void
 visit_block(struct lp_build_nir_context *bld_base, nir_block *block)
 {
+   struct gallivm_state *gallivm = bld_base->base.gallivm;
+
    nir_foreach_instr(instr, block)
    {
       switch (instr->type) {
@@ -2835,11 +2868,42 @@ visit_block(struct lp_build_nir_context *bld_base, nir_block *block)
       case nir_instr_type_call:
          visit_call(bld_base, nir_instr_as_call(instr));
          break;
+      case nir_instr_type_debug_info:
+         visit_debug_info(bld_base, nir_instr_as_debug_info(instr));
+         break;
       default:
          fprintf(stderr, "Unknown NIR instr type: ");
          nir_print_instr(instr, stderr);
          fprintf(stderr, "\n");
          abort();
+      }
+
+      nir_def *def = nir_instr_def(instr);
+      if (gallivm->di_builder && def && bld_base->ssa_types) {
+         LLVMValueRef def_value = bld_base->ssa_defs[def->index];
+         if (def_value) {
+            /* Use "ssa_%u" because GDB can not handle "%%%u" */
+            char name[16];
+            snprintf(name, sizeof(name), "ssa_%u", def->index);
+
+            LLVMMetadataRef di_type = lp_bld_debug_info_type(gallivm, bld_base->ssa_types[def->index]);
+            LLVMMetadataRef di_var = LLVMDIBuilderCreateAutoVariable(
+               gallivm->di_builder, gallivm->di_function, name, strlen(name),
+               gallivm->file, bld_base->line, di_type, true, LLVMDIFlagZero, 0);
+
+            LLVMMetadataRef di_expr = LLVMDIBuilderCreateExpression(gallivm->di_builder, NULL, 0);
+
+            LLVMMetadataRef di_loc = LLVMDIBuilderCreateDebugLocation(
+               gallivm->context, bld_base->line, bld_base->column, gallivm->di_function, NULL);
+
+#if LLVM_VERSION_MAJOR >= 19
+            LLVMDIBuilderInsertDeclareRecordAtEnd(
+               gallivm->di_builder, def_value, di_var, di_expr, di_loc, LLVMGetInsertBlock(gallivm->builder));
+#else
+            LLVMDIBuilderInsertDeclareAtEnd(
+               gallivm->di_builder, def_value, di_var, di_expr, di_loc, LLVMGetInsertBlock(gallivm->builder));
+#endif
+         }
       }
    }
 }
@@ -2965,6 +3029,35 @@ bool lp_build_nir_llvm(struct lp_build_nir_context *bld_base,
                        struct nir_shader *nir,
                        nir_function_impl *impl)
 {
+   nir_index_ssa_defs(impl);
+
+   if (bld_base->base.gallivm->di_builder && bld_base->base.gallivm->file_name) {
+      bool has_di = false;
+      nir_foreach_block(block, impl) {
+         nir_foreach_instr_safe(instr, block) {
+            if (instr->type == nir_instr_type_debug_info) {
+               has_di = true;
+               break;
+            }
+         }
+      }
+
+      if (!has_di) {
+         char *shader_src = nir_shader_gather_debug_info(nir, bld_base->base.gallivm->file_name, 1);
+         if (shader_src) {
+            mkdir(LP_NIR_SHADER_DUMP_DIR, 0774);
+
+            FILE *f = fopen(bld_base->base.gallivm->file_name, "w");
+            fprintf(f, "%s\n", shader_src);
+            fclose(f);
+
+            ralloc_free(shader_src);
+         }
+      }
+
+      bld_base->ssa_types = calloc(impl->ssa_alloc, sizeof(LLVMTypeRef));
+   }
+
    nir_foreach_shader_out_variable(variable, nir)
       handle_shader_output_decl(bld_base, nir, variable);
 
@@ -2996,11 +3089,12 @@ bool lp_build_nir_llvm(struct lp_build_nir_context *bld_base,
                                                type, "reg");
       _mesa_hash_table_insert(bld_base->regs, reg, reg_alloc);
    }
-   nir_index_ssa_defs(impl);
+
    bld_base->ssa_defs = calloc(impl->ssa_alloc, sizeof(LLVMValueRef));
    visit_cf_list(bld_base, &impl->body);
 
    free(bld_base->ssa_defs);
+   free(bld_base->ssa_types);
    ralloc_free(bld_base->vars);
    ralloc_free(bld_base->regs);
    ralloc_free(bld_base->range_ht);
