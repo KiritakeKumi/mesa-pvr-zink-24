@@ -164,6 +164,7 @@ brw_compile_cs(const struct brw_compiler *compiler,
 
    prog_data->uses_sampler = brw_nir_uses_sampler(params->base.nir);
 
+   unsigned uniforms = 0;
    std::unique_ptr<brw_shader> v[3];
 
    for (unsigned i = 0; i < 3; i++) {
@@ -199,13 +200,14 @@ brw_compile_cs(const struct brw_compiler *compiler,
          nir->info.workgroup_size_variable;
 
       if (devinfo->ver < 30 || nir->info.workgroup_size_variable) {
-         const int first = brw_simd_first_compiled(simd_state);
-         if (first >= 0)
-            v[simd]->import_uniforms(v[first].get());
+         ASSERTED const int first = brw_simd_first_compiled(simd_state);
          assert(allow_spilling == (first < 0 || nir->info.workgroup_size_variable));
       }
 
       if (run_cs(*v[simd], allow_spilling)) {
+         if (!uniforms) uniforms = v[simd]->uniforms;
+         assert(uniforms == v[simd]->uniforms);
+
          cs_fill_push_const_info(compiler->devinfo, prog_data);
 
          brw_simd_mark_compiled(simd_state, simd, v[simd]->spilled_any_registers);

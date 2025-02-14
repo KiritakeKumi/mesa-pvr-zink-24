@@ -1696,8 +1696,6 @@ brw_compile_fs(const struct brw_compiler *compiler,
                                             prog_data, nir, 32, 1,
                                             params->base.stats != NULL,
                                             debug_enabled);
-         if (vbase)
-            v32->import_uniforms(vbase);
 
          if (!run_fs(*v32, false, false)) {
             brw_shader_perf_log(compiler, params->base.log_data,
@@ -1745,8 +1743,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
                                             prog_data, nir, 16, 1,
                                             params->base.stats != NULL,
                                             debug_enabled);
-         if (v8)
-            v16->import_uniforms(v8.get());
+
          if (!run_fs(*v16, allow_spilling, params->use_rep_send)) {
             brw_shader_perf_log(compiler, params->base.log_data,
                                 "SIMD16 shader failed to compile: %s\n",
@@ -1779,10 +1776,6 @@ brw_compile_fs(const struct brw_compiler *compiler,
                                             prog_data, nir, 32, 1,
                                             params->base.stats != NULL,
                                             debug_enabled);
-         if (v8)
-            v32->import_uniforms(v8.get());
-         else if (v16)
-            v32->import_uniforms(v16.get());
 
          if (!run_fs(*v32, allow_spilling, false)) {
             brw_shader_perf_log(compiler, params->base.log_data,
@@ -1823,7 +1816,6 @@ brw_compile_fs(const struct brw_compiler *compiler,
                                                   prog_data, nir, 32, 4,
                                                   params->base.stats != NULL,
                                                   debug_enabled);
-            vmulti->import_uniforms(vbase);
             if (!run_fs(*vmulti, false, params->use_rep_send)) {
                brw_shader_perf_log(compiler, params->base.log_data,
                                    "Quad-SIMD8 shader failed to compile: %s\n",
@@ -1843,7 +1835,6 @@ brw_compile_fs(const struct brw_compiler *compiler,
                                                   prog_data, nir, 32, 2,
                                                   params->base.stats != NULL,
                                                   debug_enabled);
-            vmulti->import_uniforms(vbase);
             if (!run_fs(*vmulti, false, params->use_rep_send)) {
                brw_shader_perf_log(compiler, params->base.log_data,
                                    "Dual-SIMD16 shader failed to compile: %s\n",
@@ -1862,7 +1853,6 @@ brw_compile_fs(const struct brw_compiler *compiler,
                                                   prog_data, nir, 16, 2,
                                                   params->base.stats != NULL,
                                                   debug_enabled);
-            vmulti->import_uniforms(vbase);
             if (!run_fs(*vmulti, allow_spilling, params->use_rep_send)) {
                brw_shader_perf_log(compiler, params->base.log_data,
                                    "Dual-SIMD8 shader failed to compile: %s\n",
@@ -1900,6 +1890,7 @@ brw_compile_fs(const struct brw_compiler *compiler,
 
    struct brw_compile_stats *stats = params->base.stats;
    uint32_t max_dispatch_width = 0;
+   unsigned uniforms = 0;
 
    if (multi_cfg) {
       prog_data->dispatch_multi = vmulti->dispatch_width;
@@ -1909,13 +1900,14 @@ brw_compile_fs(const struct brw_compiler *compiler,
                       stats, vmulti->max_polygons);
       stats = stats ? stats + 1 : NULL;
       max_dispatch_width = vmulti->dispatch_width;
-
+      uniforms = vmulti->uniforms;
    } else if (simd8_cfg) {
       prog_data->dispatch_8 = true;
       g.generate_code(simd8_cfg, 8, v8->shader_stats,
                       v8->performance_analysis.require(), stats, 1);
       stats = stats ? stats + 1 : NULL;
       max_dispatch_width = 8;
+      uniforms = v8->uniforms;
    }
 
    if (simd16_cfg) {
@@ -1925,6 +1917,9 @@ brw_compile_fs(const struct brw_compiler *compiler,
          v16->performance_analysis.require(), stats, 1);
       stats = stats ? stats + 1 : NULL;
       max_dispatch_width = 16;
+
+      if (!uniforms) uniforms = v16->uniforms;
+      assert(uniforms == v16->uniforms);
    }
 
    if (simd32_cfg) {
@@ -1934,6 +1929,9 @@ brw_compile_fs(const struct brw_compiler *compiler,
          v32->performance_analysis.require(), stats, 1);
       stats = stats ? stats + 1 : NULL;
       max_dispatch_width = 32;
+
+      if (!uniforms) uniforms = v32->uniforms;
+      assert(uniforms == v32->uniforms);
    }
 
    for (struct brw_compile_stats *s = params->base.stats; s != NULL && s != stats; s++)
