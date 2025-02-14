@@ -180,10 +180,6 @@ brw_from_nir_setup_uniforms(brw_shader &s)
 {
    const intel_device_info *devinfo = s.devinfo;
 
-   /* Only the first compile gets to set up uniforms. */
-   if (s.uniforms)
-      return;
-
    s.uniforms = s.nir->num_uniforms / 4;
 
    if (gl_shader_stage_is_compute(s.stage) && devinfo->verx10 < 125) {
