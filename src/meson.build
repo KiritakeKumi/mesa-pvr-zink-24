@@ -63,6 +63,9 @@ endif
 if with_platform_wayland
   subdir('egl/wayland/wayland-drm')
 endif
+if with_any_vk and with_platform_wayland
+  subdir('vulkan/wsi/wayland/color-management')
+endif
 if with_any_vk or with_gallium_zink
   subdir('vulkan')
 endif
