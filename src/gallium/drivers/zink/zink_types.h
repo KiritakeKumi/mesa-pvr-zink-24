@@ -1557,6 +1557,7 @@ struct zink_screen {
       bool inconsistent_interpolation;
       bool can_2d_view_sparse;
       bool general_depth_layout;
+      bool broken_submit;
       unsigned z16_unscaled_bias;
       unsigned z24_unscaled_bias;
    } driver_workarounds;
